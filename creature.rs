@@ -68,7 +68,11 @@ impl Creature
 		self.vx += self.ax;
 		self.vx = min(self.max_vx, max(self.vx, -self.max_vx));
 		
-		self.vy = if world.in_support(self.x + self.vx, self.y)
+		let mut descend = false;
+		self.vy = 
+		if world.in_support(self.x + self.vx, self.y)
+		   || (self.want_down && world.in_support(self.x + self.vx, self.y + 1))
+		   || (self.want_up && world.in_support(self.x + self.vx, self.y - 1))
 		{
 			if self.want_up
 			{
@@ -76,6 +80,7 @@ impl Creature
 			}
 			else if self.want_down
 			{
+				descend = true;
 				4
 			}
 			else
@@ -95,7 +100,7 @@ impl Creature
 			}
 		};
 		
-		let (nx, ny) = world.checked_move(self.x, self.y, self.vx, self.vy);
+		let (nx, ny) = world.checked_move(self.x, self.y, self.vx, self.vy, descend);
 		self.x = nx;
 		self.y = ny;
 	}

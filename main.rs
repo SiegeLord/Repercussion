@@ -45,13 +45,18 @@ allegro_main!
 	q.register_event_source(core.get_keyboard_event_source().unwrap());
 	q.register_event_source(timer.get_event_source());
 	
-	let font = font_addon.create_builtin_font().unwrap();
+	//~ let font = font_addon.create_builtin_font().unwrap();
 	let black = core.map_rgb_f(0.0, 0.0, 0.0);
-	let white = core.map_rgb_f(1.0, 1.0, 1.0);
+	//~ let white = core.map_rgb_f(1.0, 1.0, 1.0);
 	
-	let mut camera = Camera{ x: 0, y: 0, width: 800, height: 600 };
+	let camera = Camera{ x: 0, y: 0, width: 800, height: 600 };
 	let mut player = Creature::player();
-	let world = World::new(20, 20);
+	let mut world = World::new(20, 20);
+	
+	let mut mine_up = false;
+	let mut mine_down = false;
+	let mut mine_left = false;
+	let mut mine_right = false;
 	
 	let mut redraw = true;
 	timer.start();
@@ -81,6 +86,10 @@ allegro_main!
 					key::Right => player.want_right = true,
 					key::Up => player.want_up = true,
 					key::Down => player.want_down = true,
+					key::A => mine_left = true,
+					key::D => mine_right = true,
+					key::W => mine_up = true,
+					key::S => mine_down = true,
 					key::Space => player.jump(&world),
 					_ => ()
 				}
@@ -93,6 +102,10 @@ allegro_main!
 					key::Right => player.want_right = false,
 					key::Up => player.want_up = false,
 					key::Down => player.want_down = false,
+					key::A => mine_left = false,
+					key::D => mine_right = false,
+					key::W => mine_up = false,
+					key::S => mine_down = false,
 					_ => ()
 				}
 			},
@@ -100,6 +113,19 @@ allegro_main!
 			{
 				player.update(&world);
 				//~ println!("{} {}", player.x, player.y);
+				
+				if world.on_ground(player.x, player.y) && player.vx == 0 && player.vy == 0
+				{
+					match (mine_left, mine_right, mine_up, mine_down)
+					{
+						(true, _, _, _) => world.mine(player.x, player.y, -1,  0),
+						(_, true, _, _) => world.mine(player.x, player.y,  1,  0),
+						(_, _, true, _) => world.mine(player.x, player.y,  0, -1),
+						(_, _, _, true) => world.mine(player.x, player.y,  0,  1),
+						_ => ()
+					}
+				}
+				
 				redraw = true;
 			},
 			_ => ()

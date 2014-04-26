@@ -7,6 +7,7 @@ use camera::Camera;
 use num::Integer;
 
 pub static TILE_SIZE: i32 = 32;
+pub static TILE_HEALTH: i32 = 32;
 
 #[deriving(Eq, Clone)]
 enum TileCollision
@@ -19,24 +20,25 @@ enum TileCollision
 #[deriving(Clone)]
 pub struct Tile
 {
-	collision: TileCollision
+	collision: TileCollision,
+	health: i32
 }
 
 impl Tile
 {
 	pub fn sky() -> Tile
 	{
-		Tile{ collision: Empty }
+		Tile{ collision: Empty, health: TILE_HEALTH }
 	}
 
 	pub fn ground() -> Tile
 	{
-		Tile{ collision: Solid }
+		Tile{ collision: Solid, health: TILE_HEALTH }
 	}
 	
 	pub fn support() -> Tile
 	{
-		Tile{ collision: Support }
+		Tile{ collision: Support, health: TILE_HEALTH }
 	}
 }
 
@@ -117,24 +119,44 @@ impl World
 	{
 		self.tiles.get(ty * self.width + tx)
 	}
-
-	pub fn colliding(&self, x: i32, y: i32) -> bool
+	
+	pub fn get_tile_mut<'l>(&'l mut self, tx: uint, ty: uint) -> &'l mut Tile
+	{
+		self.tiles.get_mut(ty * self.width + tx)
+	}
+	
+	pub fn check_tile_type(&self, x: i32, y: i32, coll: TileCollision) -> Option<bool>
 	{
 		let tx1 = x.div_floor(&TILE_SIZE);
 		let ty1 = y.div_floor(&TILE_SIZE);
 		let tx2 = (x + TILE_SIZE - 1).div_floor(&TILE_SIZE);
 		let ty2 = (y + TILE_SIZE - 1).div_floor(&TILE_SIZE);
-		
-		//~ println!("tx1: {} ty1: {} tx2: {}, ty2: {}", tx1, ty1, tx2, ty2);
 
-		tx1 < 0 || tx1 >= self.width as i32 ||
-		tx2 < 0 || tx2 >= self.width as i32 ||
-		ty1 < 0 || ty1 >= self.height as i32 ||
-		ty2 < 0 || ty2 >= self.height as i32 ||
-		self.get_tile(tx1 as uint, ty1 as uint).collision == Solid ||
-		self.get_tile(tx1 as uint, ty2 as uint).collision == Solid ||
-		self.get_tile(tx2 as uint, ty2 as uint).collision == Solid ||
-		self.get_tile(tx2 as uint, ty2 as uint).collision == Solid
+		if tx1 < 0 || tx1 >= self.width as i32 ||
+		   tx2 < 0 || tx2 >= self.width as i32 ||
+		   ty1 < 0 || ty1 >= self.height as i32 ||
+		   ty2 < 0 || ty2 >= self.height as i32
+		{
+			None
+		}
+		else
+		{
+			Some(
+				self.get_tile(tx1 as uint, ty1 as uint).collision == coll ||
+				self.get_tile(tx1 as uint, ty2 as uint).collision == coll ||
+				self.get_tile(tx2 as uint, ty1 as uint).collision == coll ||
+				self.get_tile(tx2 as uint, ty2 as uint).collision == coll
+			)
+		}
+	}
+
+	pub fn colliding(&self, x: i32, y: i32) -> bool
+	{
+		match self.check_tile_type(x, y, Solid)
+		{
+			Some(ret) => ret,
+			None => true
+		}
 	}
 
 	pub fn on_ground(&self, x: i32, y: i32) -> bool
@@ -144,47 +166,22 @@ impl World
 	
 	pub fn in_support(&self, x: i32, y: i32) -> bool
 	{
-		let tx1 = x.div_floor(&TILE_SIZE);
-		let ty1 = y.div_floor(&TILE_SIZE);
-		let tx2 = (x + TILE_SIZE - 1).div_floor(&TILE_SIZE);
-		let ty2 = (y + TILE_SIZE - 1).div_floor(&TILE_SIZE);
-		
-		if tx1 < 0 || tx1 >= self.width as i32 ||
-		   tx2 < 0 || tx2 >= self.width as i32 ||
-		   ty1 < 0 || ty1 >= self.height as i32 ||
-		   ty2 < 0 || ty2 >= self.height as i32
+		match self.check_tile_type(x, y, Support)
 		{
-			false
-		}
-		else
-		{
-			self.get_tile(tx1 as uint, ty1 as uint).collision == Support ||
-			self.get_tile(tx1 as uint, ty2 as uint).collision == Support ||
-			self.get_tile(tx2 as uint, ty2 as uint).collision == Support ||
-			self.get_tile(tx2 as uint, ty2 as uint).collision == Support
+			Some(ret) => ret,
+			None => false
 		}
 	}
 	
-	pub fn checked_move(&self, start_x: i32, start_y: i32, vx: i32, vy: i32) -> (i32, i32)
+	pub fn checked_move(&self, start_x: i32, start_y: i32, vx: i32, vy: i32, descend: bool) -> (i32, i32)
 	{
 		// First check if we are currently in a support, we collide with it when falling
 		let started_in_support = self.in_support(start_x, start_y);
+		let started_on_ground = self.on_ground(start_x, start_y);
 		
 		let mut x = start_x;
 		let mut y = start_y;
-		if vx != 0
-		{
-			let dx = if vx > 0 { 1 } else { -1 };
-			for _ in range(0, abs(vx))
-			{
-				if self.colliding(x + dx, y)
-				{
-					break;
-				}
-				x += dx;
-			}
-		}
-
+		
 		if vy != 0
 		{
 			let dy = if vy > 0 { 1 } else { -1 };
@@ -195,13 +192,58 @@ impl World
 					break;
 				}
 				// Landed on support while falling
-				if dy > 0 && self.in_support(x, y + dy) && !started_in_support
+				if !descend && dy > 0 && self.in_support(x, y + dy) && !started_in_support
 				{
 					break;
 				}
 				y += dy;
 			}
 		}
+		
+		let mut hack_fall = false;
+		
+		if vx != 0
+		{
+			let dx = if vx > 0 { 1 } else { -1 };
+			for _ in range(0, abs(vx))
+			{
+				// Try falling... hack
+				if !hack_fall && !self.on_ground(x, y) && started_on_ground && (descend || !self.in_support(x, y + 1))
+				{
+					hack_fall = true;
+					y += 1;
+				}
+				if self.colliding(x + dx, y)
+				{
+					break;
+				}
+				x += dx;
+			}
+		}
+		
+		if hack_fall
+		{
+			y -= 1;
+		}
+
 		(x, y)
+	}
+
+	pub fn mine(&mut self, x: i32, y: i32, dtx: i32, dty: i32)
+	{
+		let tx = (x + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dtx;
+		let ty = (y + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dty;
+		
+		println!("mine");
+		
+		if tx >= 0 && tx < self.width as i32 && ty >= 0 && ty < self.height as i32
+		{
+			let tile = self.get_tile_mut(tx as uint, ty as uint);
+			tile.health -= 1;
+			if tile.health <= 0
+			{
+				tile.collision = Empty;
+			}
+		}
 	}
 }
