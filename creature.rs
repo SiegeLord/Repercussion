@@ -3,7 +3,7 @@ use allegro_primitives::*;
 
 use std::cmp::{max, min};
 
-use world::{World, TILE_SIZE};
+use world::World;
 use camera::Camera;
 
 pub struct Creature
@@ -13,11 +13,14 @@ pub struct Creature
 	pub vx: i32,
 	pub vy: i32,
 	pub ax: i32,
-	pub max_vx: i32,
 	pub want_right: bool,
 	pub want_left: bool,
 	pub want_up: bool,
 	pub want_down: bool,
+	
+	pub max_vx: i32,
+	pub w: i32,
+	pub h: i32,
 }
 
 impl Creature
@@ -31,6 +34,8 @@ impl Creature
 			vx: 0,
 			vy: 0,
 			ax: 0,
+			w: 24,
+			h: 24,
 			max_vx: 4,
 			want_right: false,
 			want_left: false,
@@ -70,9 +75,9 @@ impl Creature
 		
 		let mut descend = false;
 		self.vy = 
-		if world.in_support(self.x + self.vx, self.y)
-		   || (self.want_down && world.in_support(self.x + self.vx, self.y + 1))
-		   || (self.want_up && world.in_support(self.x + self.vx, self.y - 1))
+		if world.in_support(self.x + self.vx, self.y, self.w, self.h)
+		   || (self.want_down && world.in_support(self.x + self.vx, self.y + 1, self.w, self.h))
+		   || (self.want_up && world.in_support(self.x + self.vx, self.y - 1, self.w, self.h))
 		{
 			if self.want_up
 			{
@@ -90,7 +95,7 @@ impl Creature
 		}
 		else
 		{
-			if world.on_ground(self.x, self.y) && self.vy > 0 || world.in_support(self.x, self.y + 1)
+			if world.on_ground(self.x, self.y, self.w, self.h) && self.vy > 0 || world.on_support(self.x, self.y, self.w, self.h)
 			{
 				0
 			}
@@ -100,16 +105,18 @@ impl Creature
 			}
 		};
 		
-		let (nx, ny) = world.checked_move(self.x, self.y, self.vx, self.vy, descend);
+		let (nx, ny) = world.checked_move(self.x, self.y, self.w, self.h, self.vx, self.vy, descend);
 		self.x = nx;
 		self.y = ny;
 	}
 	
 	pub fn jump(&mut self, world: &World)
 	{
-		if world.on_ground(self.x, self.y) && !world.in_support(self.x, self.y)
+		if (world.on_ground(self.x, self.y, self.w, self.h) || world.on_support(self.x, self.y, self.w, self.h))
+		   && !world.colliding(self.x, self.y - 1, self.w, self.h)
 		{
 			self.vy = -10;
+			self.y -= 1;
 		}
 	}
 
@@ -117,6 +124,6 @@ impl Creature
 	{
 		let x = (self.x - camera.x) as f32;
 		let y = (self.y - camera.y) as f32;
-		prim.draw_filled_rectangle(x, y, x + TILE_SIZE as f32, y + TILE_SIZE as f32, core.map_rgb_f(0.7, 0.0, 0.5));
+		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(0.7, 0.0, 0.5));
 	}
 }

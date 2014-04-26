@@ -57,6 +57,7 @@ allegro_main!
 	let mut mine_down = false;
 	let mut mine_left = false;
 	let mut mine_right = false;
+	let mut place_support = false;
 	
 	let mut redraw = true;
 	timer.start();
@@ -90,6 +91,7 @@ allegro_main!
 					key::D => mine_right = true,
 					key::W => mine_up = true,
 					key::S => mine_down = true,
+					key::F => place_support = true,
 					key::Space => player.jump(&world),
 					_ => ()
 				}
@@ -106,6 +108,7 @@ allegro_main!
 					key::D => mine_right = false,
 					key::W => mine_up = false,
 					key::S => mine_down = false,
+					key::F => place_support = false,
 					_ => ()
 				}
 			},
@@ -114,7 +117,7 @@ allegro_main!
 				player.update(&world);
 				//~ println!("{} {}", player.x, player.y);
 				
-				if world.on_ground(player.x, player.y) && player.vx == 0 && player.vy == 0
+				if world.on_ground(player.x, player.y, player.w, player.h) || world.on_support(player.x, player.y, player.w, player.h) && player.vx == 0 && player.vy == 0
 				{
 					match (mine_left, mine_right, mine_up, mine_down)
 					{
@@ -123,6 +126,11 @@ allegro_main!
 						(_, _, true, _) => world.mine(player.x, player.y,  0, -1),
 						(_, _, _, true) => world.mine(player.x, player.y,  0,  1),
 						_ => ()
+					}
+					
+					if place_support
+					{
+						world.place_support(player.x, player.y);
 					}
 				}
 				
