@@ -9,6 +9,7 @@ extern crate allegro_image;
 extern crate allegro_font;
 extern crate allegro_ttf;
 extern crate allegro_primitives;
+extern crate num;
 
 use allegro5::*;
 use allegro_image::*;
@@ -18,9 +19,11 @@ use allegro_primitives::*;
 
 use world::World;
 use camera::Camera;
+use creature::Creature;
 
 mod camera;
 mod world;
+mod creature;
 
 allegro_main!
 {
@@ -46,7 +49,8 @@ allegro_main!
 	let black = core.map_rgb_f(0.0, 0.0, 0.0);
 	let white = core.map_rgb_f(1.0, 1.0, 1.0);
 	
-	let mut camera = Camera{ x: 0.0, y: 0.0, width: 800.0, height: 600.0 };
+	let mut camera = Camera{ x: 0, y: 0, width: 800, height: 600 };
+	let mut player = Creature::player();
 	let world = World::new(20, 20);
 	
 	let mut redraw = true;
@@ -57,6 +61,7 @@ allegro_main!
 		{
 			core.clear_to_color(black);
 			world.draw(&core, &prim, &camera);
+			player.draw(&core, &prim, &camera);
 			disp.flip();
 			redraw = false;
 		}
@@ -72,15 +77,29 @@ allegro_main!
 				match k
 				{
 					key::Escape => break 'exit,
-					key::Left => camera.x -= 5.0,
-					key::Right => camera.x += 5.0,
-					key::Up => camera.y -= 5.0,
-					key::Down => camera.y += 5.0,
+					key::Left => player.want_left = true,
+					key::Right => player.want_right = true,
+					key::Up => player.want_up = true,
+					key::Down => player.want_down = true,
+					key::Space => player.jump(&world),
+					_ => ()
+				}
+			},
+			KeyUp{keycode: k, ..} => 
+			{
+				match k
+				{
+					key::Left => player.want_left = false,
+					key::Right => player.want_right = false,
+					key::Up => player.want_up = false,
+					key::Down => player.want_down = false,
 					_ => ()
 				}
 			},
 			TimerTick{..} =>
 			{
+				player.update(&world);
+				//~ println!("{} {}", player.x, player.y);
 				redraw = true;
 			},
 			_ => ()

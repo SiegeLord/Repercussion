@@ -1,7 +1,7 @@
 pub struct Camera
 {
-	pub x: f32,
-	pub y: f32,
-	pub width: f32,
-	pub height: f32,
+	pub x: i32,
+	pub y: i32,
+	pub width: i32,
+	pub height: i32,
 }
