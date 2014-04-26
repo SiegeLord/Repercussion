@@ -181,9 +181,10 @@ impl World
 
 					if self.get_tile(x, y).fall_state < 0
 					{
-						self.get_tile_mut(x, y).fall_state += 1;
-						if self.get_tile(x, y).fall_state == 0
+						self.get_tile_mut(x, y).fall_state += 2;
+						if self.get_tile(x, y).fall_state >= 0
 						{
+							self.get_tile_mut(x, y).fall_state = 0;
 							camera.jolt(5.0);
 						}
 						else

@@ -143,6 +143,13 @@ allegro_main!
 				{
 					gem_count += g.update(&world, player.x, player.y, player.w, player.h);
 				}
+
+				for g in gems.mut_iter()
+				{
+					gem_count += g.update(&world, player.x, player.y, player.w, player.h);
+				}
+				
+				gems.retain(|g| !g.dead);
 				
 				world.update(&mut camera);
 				camera.update(player.x, player.y);

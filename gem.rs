@@ -39,6 +39,13 @@ impl Gem
 		{
 			return 0;
 		}
+		
+		if world.colliding(self.x, self.y, self.w, self.h)
+		{
+			self.dead = true;
+			return 0;
+		}
+		
 		self.vy = if world.on_ground(self.x, self.y, self.w, self.h) && self.vy > 0 || world.on_support(self.x, self.y, self.w, self.h)
 		{
 			0
