@@ -34,7 +34,10 @@ allegro_main!
 	let _ttf_addon = TtfAddon::init(&font_addon).expect("Failed to initialize the ttf addon");
 	let prim = PrimitivesAddon::init(&core).expect("Failed to initialize the primitives addon");
 	
-	let disp = core.create_display(800, 600).unwrap();
+	let dw = 800;
+	let dh = 600;
+	
+	let disp = core.create_display(dw, dh).unwrap();
 	disp.set_window_title(&"Gold gold gold gold.".to_c_str());
 
 	core.install_keyboard();
@@ -51,8 +54,10 @@ allegro_main!
 	//~ let white = core.map_rgb_f(1.0, 1.0, 1.0);
 	
 	let mut world = World::new(30, 30);
-	let mut camera = Camera::new(800, 600, world.get_pixel_width(), world.get_pixel_height());
+	let mut camera = Camera::new(dw / 2, dh / 2, world.get_pixel_width(), world.get_pixel_height());
 	let mut player = Creature::player();
+	
+	let buffer = core.create_bitmap(dw / 2, dh / 2).unwrap();
 	
 	let mut mine_up = false;
 	let mut mine_down = false;
@@ -66,9 +71,12 @@ allegro_main!
 	{
 		if redraw && q.is_empty()
 		{
+			core.set_target_bitmap(&buffer);
 			core.clear_to_color(black);
 			world.draw(&core, &prim, &font, &camera);
 			player.draw(&core, &prim, &camera);
+			core.set_target_bitmap(disp.get_backbuffer());
+			core.draw_scaled_bitmap(&buffer, 0.0, 0.0, (dw / 2) as f32, (dh / 2) as f32, 0.0, 0.0, dw as f32, dh as f32, Flag::zero());
 			disp.flip();
 			redraw = false;
 		}
