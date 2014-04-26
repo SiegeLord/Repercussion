@@ -6,7 +6,12 @@ use std::cmp::{max, min};
 use world::World;
 use camera::Camera;
 
-pub struct Creature
+pub enum EntityType
+{
+	Player
+}
+
+pub struct Entity
 {
 	pub x: i32,
 	pub y: i32,
@@ -21,16 +26,17 @@ pub struct Creature
 	pub max_vx: i32,
 	pub w: i32,
 	pub h: i32,
+	pub entity_type: EntityType,
 }
 
-impl Creature
+impl Entity
 {
-	pub fn player() -> Creature
+	pub fn player(x: i32, y: i32) -> Entity
 	{
-		Creature
+		Entity
 		{
-			x: 0,
-			y: 0,
+			x: x,
+			y: y,
 			vx: 0,
 			vy: 0,
 			ax: 0,
@@ -41,6 +47,7 @@ impl Creature
 			want_left: false,
 			want_up: false,
 			want_down: false,
+			entity_type: Player
 		}
 	}
 	

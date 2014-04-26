@@ -1,6 +1,5 @@
 use rand::{task_rng, Rng};
 use std::cmp::{min, max};
-use std::num::abs;
 
 pub struct Camera
 {

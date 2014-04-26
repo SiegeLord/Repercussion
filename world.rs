@@ -6,6 +6,7 @@ use std::cmp::{min, max};
 use std::num::abs;
 use camera::Camera;
 use num::Integer;
+use rand::{task_rng, Rng};
 
 pub static TILE_SIZE: i32 = 32;
 pub static TILE_HEALTH: i32 = 32;
@@ -25,28 +26,29 @@ pub struct Tile
 	health: i32,
 	support: f32,
 	fall_state: i32,
+	has_gem: bool,
 }
 
 impl Tile
 {
 	pub fn sky() -> Tile
 	{
-		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0 }
+		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0, has_gem: false }
 	}
 
 	pub fn cave() -> Tile
 	{
-		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0 }
+		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0, has_gem: false }
 	}
 
 	pub fn ground() -> Tile
 	{
-		Tile{ collision: Solid, health: TILE_HEALTH, support: 4.0, fall_state: 0 }
+		Tile{ collision: Solid, health: TILE_HEALTH, support: 4.0, fall_state: 0, has_gem: task_rng().gen_weighted_bool(5) }
 	}
 	
 	pub fn support() -> Tile
 	{
-		Tile{ collision: Support, health: TILE_HEALTH, support: 4.0, fall_state: 0 }
+		Tile{ collision: Support, health: TILE_HEALTH, support: 4.0, fall_state: 0, has_gem: false }
 	}
 }
 
@@ -337,7 +339,7 @@ impl World
 		}
 	}
 
-	pub fn mine(&mut self, x: i32, y: i32, dtx: i32, dty: i32)
+	pub fn mine(&mut self, x: i32, y: i32, dtx: i32, dty: i32) -> Option<(i32, i32)>
 	{
 		let tx = (x + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dtx;
 		let ty = (y + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dty;
@@ -348,8 +350,25 @@ impl World
 			tile.health -= 1;
 			if tile.health <= 0
 			{
+				let ret = if tile.has_gem
+				{
+					Some((tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2))
+				}
+				else
+				{
+					None
+				};
 				*tile = Tile::sky();
+				ret
 			}
+			else
+			{
+				None
+			}
+		}
+		else
+		{
+			None
 		}
 	}
 }

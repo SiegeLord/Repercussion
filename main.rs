@@ -20,11 +20,14 @@ use allegro_primitives::*;
 
 use world::World;
 use camera::Camera;
-use creature::Creature;
+use entity::Entity;
+use gem::Gem;
 
 mod camera;
 mod world;
-mod creature;
+mod entity;
+mod gem;
+mod util;
 
 allegro_main!
 {
@@ -51,11 +54,13 @@ allegro_main!
 	
 	let font = font_addon.create_builtin_font().unwrap();
 	let black = core.map_rgb_f(0.0, 0.0, 0.0);
-	//~ let white = core.map_rgb_f(1.0, 1.0, 1.0);
+	let white = core.map_rgb_f(1.0, 1.0, 1.0);
 	
 	let mut world = World::new(30, 30);
 	let mut camera = Camera::new(dw / 2, dh / 2, world.get_pixel_width(), world.get_pixel_height());
-	let mut player = Creature::player();
+	let mut player = Entity::player(20, 20);
+	
+	let mut gems: Vec<Gem> = Vec::new();
 	
 	let buffer = core.create_bitmap(dw / 2, dh / 2).unwrap();
 	
@@ -64,6 +69,7 @@ allegro_main!
 	let mut mine_left = false;
 	let mut mine_right = false;
 	let mut place_support = false;
+	let mut gem_count = 10i32;
 	
 	let mut redraw = true;
 	timer.start();
@@ -75,6 +81,14 @@ allegro_main!
 			core.clear_to_color(black);
 			world.draw(&core, &prim, &font, &camera);
 			player.draw(&core, &prim, &camera);
+			
+			for e in gems.iter()
+			{
+				e.draw(&core, &prim, &camera);
+			}
+			
+			core.draw_text(&font, white, 10.0, 10.0, AlignLeft, format!("Gems: {}", gem_count));
+			
 			core.set_target_bitmap(disp.get_backbuffer());
 			core.draw_scaled_bitmap(&buffer, 0.0, 0.0, (dw / 2) as f32, (dh / 2) as f32, 0.0, 0.0, dw as f32, dh as f32, Flag::zero());
 			disp.flip();
@@ -124,24 +138,38 @@ allegro_main!
 			TimerTick{..} =>
 			{
 				player.update(&world);
+				
+				for g in gems.mut_iter()
+				{
+					gem_count += g.update(&world, player.x, player.y, player.w, player.h);
+				}
+				
 				world.update(&mut camera);
 				camera.update(player.x, player.y);
 				//~ println!("{} {}", player.x, player.y);
 				
 				if world.on_ground(player.x, player.y, player.w, player.h) || world.on_support(player.x, player.y, player.w, player.h) && player.vx == 0 && player.vy == 0
 				{
-					match (mine_left, mine_right, mine_up, mine_down)
+					let spawn_gem = match (mine_left, mine_right, mine_up, mine_down)
 					{
 						(true, _, _, _) => world.mine(player.x, player.y, -1,  0),
 						(_, true, _, _) => world.mine(player.x, player.y,  1,  0),
 						(_, _, true, _) => world.mine(player.x, player.y,  0, -1),
 						(_, _, _, true) => world.mine(player.x, player.y,  0,  1),
-						_ => ()
-					}
+						_ => None
+					};
 					
-					if place_support
+					spawn_gem.map(|(x, y)|
 					{
-						world.place_support(player.x, player.y);
+						gems.push(Gem::new(x, y));
+					});
+					
+					if place_support && gem_count > 0
+					{
+						if world.place_support(player.x, player.y)
+						{
+							gem_count -= 1;
+						}
 					}
 				}
 				
