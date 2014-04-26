@@ -1,5 +1,6 @@
 use allegro5::*;
 use allegro_primitives::*;
+use allegro_font::*;
 
 use std::cmp::{min, max};
 use std::num::abs;
@@ -21,24 +22,31 @@ enum TileCollision
 pub struct Tile
 {
 	collision: TileCollision,
-	health: i32
+	health: i32,
+	support: f32,
+	fall_state: i32,
 }
 
 impl Tile
 {
 	pub fn sky() -> Tile
 	{
-		Tile{ collision: Empty, health: TILE_HEALTH }
+		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0 }
+	}
+
+	pub fn cave() -> Tile
+	{
+		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0 }
 	}
 
 	pub fn ground() -> Tile
 	{
-		Tile{ collision: Solid, health: TILE_HEALTH }
+		Tile{ collision: Solid, health: TILE_HEALTH, support: 4.0, fall_state: 0 }
 	}
 	
 	pub fn support() -> Tile
 	{
-		Tile{ collision: Support, health: TILE_HEALTH }
+		Tile{ collision: Support, health: TILE_HEALTH, support: 4.0, fall_state: 0 }
 	}
 }
 
@@ -46,7 +54,7 @@ pub struct World
 {
 	width: uint,
 	height: uint,
-	tiles: Vec<Tile>
+	tiles: Vec<Tile>,
 }
 
 impl World
@@ -87,8 +95,18 @@ impl World
 			tiles: tiles,
 		}
 	}
+	
+	pub fn get_pixel_width(&self) -> i32
+	{
+		self.width as i32 * TILE_SIZE
+	}
+	
+	pub fn get_pixel_height(&self) -> i32
+	{
+		self.height as i32 * TILE_SIZE
+	}
 
-	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, camera: &Camera)
+	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, font: &Font, camera: &Camera)
 	{
 		let sz = TILE_SIZE;
 		let min_tx = min(max(camera.x / sz, 0) as uint, self.width);
@@ -100,16 +118,77 @@ impl World
 		{
 			for tx in range(min_tx, max_tx)
 			{
-				let x = (tx as i32 * sz - camera.x) as f32;
-				let y = (ty as i32 * sz - camera.y) as f32;
 				let idx = ty * self.width + tx;
-				if self.tiles.get(idx).collision == Solid
+				let tile = self.tiles.get(idx);
+				
+				let x = (tx as i32 * sz - camera.x) as f32;
+				let y = (ty as i32 * sz - camera.y + tile.fall_state) as f32;
+				if tile.collision == Solid
 				{
-					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(1.0, 1.0, 1.0));
+					let g = 0.5 * tile.health as f32 / TILE_HEALTH as f32;
+					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(g, g, g));
+					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
 				}
-				else if self.tiles.get(idx).collision == Support
+				else if tile.collision == Support
 				{
-					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(1.0, 0.0, 1.0));
+					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(0.5, 1.0, 1.0));
+					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+				}
+			}
+		}
+	}
+	
+	pub fn update(&mut self, camera: &mut Camera)
+	{
+		for y in range(1, self.height - 1).rev()
+		{
+			for x in range(0, self.width)
+			{
+				if self.get_tile(x, y).collision != Empty
+				{
+					let mut sup = 0.0f32;
+					if x > 0
+					{
+						let tile = self.get_tile(x - 1, y);
+						sup = sup.max(tile.support * (tile.health as f32 / TILE_HEALTH as f32) - 1.0);
+					}
+					if x < self.width - 1
+					{
+						let tile = self.get_tile(x + 1, y);
+						sup = sup.max(tile.support * (tile.health as f32 / TILE_HEALTH as f32) - 1.0);
+					}
+					{
+						let tile = self.get_tile(x, y + 1);
+						sup = sup.max(tile.support * (tile.health as f32 / TILE_HEALTH as f32));
+					}
+					
+					if sup <= 1.0
+					{
+						if self.get_tile(x, y + 1).collision == Empty
+						{
+							let mut tile = self.get_tile(x, y).clone();
+							tile.fall_state = -TILE_SIZE;
+							*self.get_tile_mut(x, y) = Tile::cave();
+							*self.get_tile_mut(x, y + 1) = tile;
+						}
+					}
+					else
+					{
+						self.get_tile_mut(x, y).support = sup;
+					}
+
+					if self.get_tile(x, y).fall_state < 0
+					{
+						self.get_tile_mut(x, y).fall_state += 1;
+						if self.get_tile(x, y).fall_state == 0
+						{
+							camera.jolt(5.0);
+						}
+						else
+						{
+							camera.jolt(2.0);
+						}
+					}
 				}
 			}
 		}

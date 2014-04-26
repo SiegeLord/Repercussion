@@ -10,6 +10,7 @@ extern crate allegro_font;
 extern crate allegro_ttf;
 extern crate allegro_primitives;
 extern crate num;
+extern crate rand;
 
 use allegro5::*;
 use allegro_image::*;
@@ -45,13 +46,13 @@ allegro_main!
 	q.register_event_source(core.get_keyboard_event_source().unwrap());
 	q.register_event_source(timer.get_event_source());
 	
-	//~ let font = font_addon.create_builtin_font().unwrap();
+	let font = font_addon.create_builtin_font().unwrap();
 	let black = core.map_rgb_f(0.0, 0.0, 0.0);
 	//~ let white = core.map_rgb_f(1.0, 1.0, 1.0);
 	
-	let camera = Camera{ x: 0, y: 0, width: 800, height: 600 };
+	let mut world = World::new(30, 30);
+	let mut camera = Camera::new(800, 600, world.get_pixel_width(), world.get_pixel_height());
 	let mut player = Creature::player();
-	let mut world = World::new(20, 20);
 	
 	let mut mine_up = false;
 	let mut mine_down = false;
@@ -66,7 +67,7 @@ allegro_main!
 		if redraw && q.is_empty()
 		{
 			core.clear_to_color(black);
-			world.draw(&core, &prim, &camera);
+			world.draw(&core, &prim, &font, &camera);
 			player.draw(&core, &prim, &camera);
 			disp.flip();
 			redraw = false;
@@ -115,6 +116,8 @@ allegro_main!
 			TimerTick{..} =>
 			{
 				player.update(&world);
+				world.update(&mut camera);
+				camera.update(player.x, player.y);
 				//~ println!("{} {}", player.x, player.y);
 				
 				if world.on_ground(player.x, player.y, player.w, player.h) || world.on_support(player.x, player.y, player.w, player.h) && player.vx == 0 && player.vy == 0
