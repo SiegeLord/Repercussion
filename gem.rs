@@ -17,7 +17,8 @@ pub enum GemColor
 	Green,
 	Blue,
 	Yellow,
-	Purple
+	Purple,
+	Phil
 }
 
 impl GemColor
@@ -30,7 +31,8 @@ impl GemColor
 			Green => 2,
 			Blue => 5,
 			Yellow => 10,
-			Purple => 25
+			Purple => 25,
+			Phil => 0,
 		}
 	}
 
@@ -42,7 +44,8 @@ impl GemColor
 			Green => core.map_rgb_f(0.0, 1.0, 0.0),
 			Blue => core.map_rgb_f(0.0, 0.0, 1.0),
 			Yellow => core.map_rgb_f(1.0, 1.0, 0.0),
-			Purple => core.map_rgb_f(0.7, 0.0, 0.7)
+			Purple => core.map_rgb_f(0.7, 0.0, 0.7),
+			Phil => core.map_rgb(169, 240, 210),
 		}
 	}
 }
@@ -70,7 +73,6 @@ impl Gem
 		     Weighted { weight: 5,   item: Yellow },
 		     Weighted { weight: 1,   item: Purple }]
 		);
-		
 		
 		Gem
 		{

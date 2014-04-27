@@ -19,12 +19,13 @@ use allegro_font::*;
 use allegro_ttf::*;
 use allegro_primitives::*;
 
-use world::World;
+use world::{World, SURFACE_HEIGHT};
 use camera::Camera;
 use entity::Entity;
-use gem::{Gem, Purple};
+use gem::{Gem, Purple, Phil};
 use demon::Demon;
 use torch::Torch;
+use message::Message;
 
 mod camera;
 mod world;
@@ -33,6 +34,16 @@ mod gem;
 mod util;
 mod demon;
 mod torch;
+mod message;
+
+#[deriving(Eq, Clone)]
+enum GameState
+{
+	Playing,
+	Dead,
+	Won,
+	Ending,
+}
 
 allegro_main!
 {
@@ -46,7 +57,7 @@ allegro_main!
 	let dh = 600;
 	
 	let disp = core.create_display(dw, dh).unwrap();
-	disp.set_window_title(&"Gold gold gold gold.".to_c_str());
+	disp.set_window_title(&"Repercussion".to_c_str());
 
 	core.install_keyboard();
 	
@@ -68,6 +79,9 @@ allegro_main!
 	let mut gems: Vec<Gem> = Vec::new();
 	let mut demons: Vec<Demon> = Vec::new();
 	let mut torches: Vec<Torch> = Vec::new();
+	let mut phil = Gem::with_color(10, 10, Phil);
+	let mut message = Some(Message::intro());
+	let mut state = Playing;
 	
 	demons.push(Demon::new(128, 128));
 	
@@ -98,6 +112,7 @@ allegro_main!
 	let mut place_support = false;
 	let mut place_torch = false;
 	let mut gem_count = 20i32;
+	let mut eaten = false;
 	
 	let mut redraw = true;
 	timer.start();
@@ -108,26 +123,39 @@ allegro_main!
 			core.set_target_bitmap(&buffer);
 			core.clear_to_color(black);
 			
-			world.draw(&core, &prim, &font, &camera);
-			
-			for t in torches.iter()
+			if state != Ending && state != Dead
 			{
-				t.draw(&core, &prim, &camera);
+				world.draw(&core, &prim, &font, &camera);
+				
+				for t in torches.iter()
+				{
+					t.draw(&core, &prim, &camera);
+				}
 			}
 			
 			player.draw(&core, &prim, &world, &camera);
-
-			for e in gems.iter()
+			
+			if state != Ending && state != Dead
 			{
-				e.draw(&core, &prim, &camera);
-			}
-
-			for d in demons.iter()
-			{
-				d.draw(&core, &prim, &world, &camera);
+				for d in demons.iter()
+				{
+					d.draw(&core, &prim, &world, &camera);
+				}
+				
+				for g in gems.iter()
+				{
+					g.draw(&core, &prim, &camera);
+				}
+				
+				phil.draw(&core, &prim, &camera);
+				
+				core.draw_text(&font, white, 10.0, 10.0, AlignLeft, format!("Gems: {}", gem_count));
 			}
 			
-			core.draw_text(&font, white, 10.0, 10.0, AlignLeft, format!("Gems: {}", gem_count));
+			message.as_ref().map(|m|
+			{
+				m.draw(dw / 2, dh / 2, &core, &prim, &font);
+			});
 			
 			core.set_target_bitmap(disp.get_backbuffer());
 			core.draw_scaled_bitmap(&buffer, 0.0, 0.0, (dw / 2) as f32, (dh / 2) as f32, 0.0, 0.0, dw as f32, dh as f32, Flag::zero());
@@ -180,41 +208,102 @@ allegro_main!
 			TimerTick{..} =>
 			{
 				let _start = time::precise_time_ns();
-				player.update(&world);
 				
-				for g in gems.mut_iter()
+				if state == Playing
 				{
-					gem_count += g.update(&world, player.x, player.y, player.w, player.h);
-				}
+					// Player
+					player.update(&world);
+					
+					if player.dead
+					{
+						state = Dead;
+						message = if eaten { Some(Message::eaten()) } else { Some(Message::crushed()) };
+					}
+					
+					if message.is_none()
+					{
+						world.get_tile_coords(player.x + player.w / 2, player.y + player.h / 2).map(|(_, ty)|
+						{
+							if phil.dead && ty <= SURFACE_HEIGHT as uint && state == Playing
+							{
+								message = Some(Message::surface());
+								state = Won;
+							}
+						});
+					}
+					
+					// Gems
+					for g in gems.mut_iter()
+					{
+						gem_count += g.update(&world, player.x, player.y, player.w, player.h);
+					}
+					gems.retain(|g| !g.dead);
 
-				for g in gems.mut_iter()
-				{
-					gem_count += g.update(&world, player.x, player.y, player.w, player.h);
-				}
-				gems.retain(|g| !g.dead);
+					// Demons
+					for d in demons.mut_iter()
+					{
+						eaten |= d.update(&world, player.x, player.y, player.w, player.h);
+					}
+					demons.retain(|d| !d.dead);
+					
+					if eaten
+					{
+						player.dead = true;
+					}
+					
+					// Phil
+					let phil_old_dead = phil.dead;
+					phil.update(&world, player.x, player.y, player.w, player.h);
+					if phil.dead && !phil_old_dead
+					{
+						torches.clear();
+						world.need_new_light = true;
+						message = Some(Message::found());
+					}
 
-				for d in demons.mut_iter()
-				{
-					d.update(&world, player.x, player.y, player.w, player.h);
-				}
-				demons.retain(|d| !d.dead);
-
-				for t in torches.mut_iter()
-				{
-					t.update(&world);
-				}
-				let old_len = torches.len();
-				torches.retain(|d| !d.dead);
-				if torches.len() != old_len
-				{
-					world.need_new_light = true;
+					// Torches
+					for t in torches.mut_iter()
+					{
+						t.update(&world);
+					}
+					let old_len = torches.len();
+					torches.retain(|d| !d.dead);
+					
+					if torches.len() != old_len
+					{
+						world.need_new_light = true;
+					}
+					
+					// World
+					world.update(&mut camera, torches.as_slice(), player.x, player.y, player.w, player.h);
+					// Camera
+					camera.update(player.x, player.y);
 				}
 				
-				world.update(&mut camera, torches.as_slice(), player.x, player.y, player.w, player.h);
-				camera.update(player.x, player.y);
+				// Messages
+				let hide = message.as_mut().map(|m|
+				{
+					m.update()
+				});
+				hide.map(|hide|
+					if hide
+					{
+						message = None;
+						if state == Won
+						{
+							state = Ending;
+							message = Some(Message::no_john());
+						}
+						else if state == Ending
+						{
+							player.make_demon();
+						}
+					}
+				);
 				//~ println!("{} {}", player.x, player.y);
 				
-				if !player.dead &&
+				// Player actions
+				if state == Playing && !player.dead &&
 				   (world.on_ground(player.x, player.y, player.w, player.h) || world.on_support(player.x, player.y, player.w, player.h)) &&
 				    player.vx == 0 && player.vy == 0
 				{

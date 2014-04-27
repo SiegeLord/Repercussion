@@ -6,6 +6,7 @@ use std::cmp::{max, min};
 use world::World;
 use camera::Camera;
 
+#[deriving(Eq)]
 pub enum EntityType
 {
 	Player,
@@ -54,6 +55,11 @@ impl Entity
 		}
 	}
 	
+	pub fn make_demon(&mut self)
+	{
+		self.entity_type = Demon;
+	}
+	
 	pub fn update(&mut self, world: &World)
 	{
 		if self.dead
@@ -64,6 +70,11 @@ impl Entity
 		if world.colliding(self.x, self.y, self.w, self.h)
 		{
 			self.dead = true;
+			return;
+		}
+		
+		if self.entity_type == Demon
+		{
 			return;
 		}
 		
@@ -133,6 +144,11 @@ impl Entity
 	
 	pub fn jump(&mut self, world: &World)
 	{
+		if self.entity_type == Demon
+		{
+			return;
+		}
+
 		if (world.on_ground(self.x, self.y, self.w, self.h) || world.on_support(self.x, self.y, self.w, self.h))
 		   && !world.colliding(self.x, self.y - 1, self.w, self.h)
 		{
@@ -143,15 +159,29 @@ impl Entity
 
 	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, world: &World, camera: &Camera)
 	{
-		if self.dead
-		{
-			return;
-		}
+		//~ if self.dead
+		//~ {
+			//~ return;
+		//~ }
 		let x = (self.x - camera.x) as f32;
 		let y = (self.y - camera.y) as f32;
 		
-		let l = world.get_light(self.x + self.w / 2, self.y + self.h / 2);
+		let l = if self.dead
+		{
+			1.0
+		}
+		else
+		{
+			world.get_light(self.x + self.w / 2, self.y + self.h / 2)
+		};
 		
-		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(l * 0.7, 0.0, l * 0.5));
+		if self.entity_type == Demon
+		{
+			prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(l * 0.7, 0.0, 0.0));
+		}
+		else
+		{
+			prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(l * 0.7, 0.0, l * 0.5));
+		}
 	}
 }
