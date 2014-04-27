@@ -9,10 +9,12 @@ use num::Integer;
 use rand::{task_rng, Rng};
 use std::f32::INFINITY;
 use std::fmt;
+use torch::Torch;
 
 pub static TILE_SIZE: i32 = 32;
 pub static TILE_HEALTH: i32 = 32;
 pub static MAX_ITERATIONS: i32 = 10;
+pub static SURFACE_HEIGHT: i32 = 5;
 
 #[deriving(Eq, Clone)]
 #[repr(C)]
@@ -89,7 +91,7 @@ impl fmt::Show for DemonAction
 }
 
 #[deriving(Eq, Clone)]
-enum TileCollision
+pub enum TileCollision
 {
 	Solid,
 	Empty,
@@ -97,7 +99,7 @@ enum TileCollision
 }
 
 #[deriving(Eq, Clone)]
-enum TileType
+pub enum TileType
 {
 	Sky,
 	Ground,
@@ -105,19 +107,21 @@ enum TileType
 	Cave,
 	SupportType,
 	Bottom,
+	Surface,
 }
 
 #[deriving(Clone)]
 pub struct Tile
 {
 	collision: TileCollision,
-	tile_type: TileType,
+	pub tile_type: TileType,
 	health: i32,
 	support: f32,
 	fall_state: i32,
 	has_gem: bool,
 	demon_value: f32,
 	demon_policy: DemonAction,
+	light: f32,
 }
 
 impl Tile
@@ -134,6 +138,7 @@ impl Tile
 			has_gem: false,
 			demon_policy: MoveUp,
 			demon_value: INFINITY,
+			light: 1.0,
 		}
 	}
 
@@ -149,6 +154,7 @@ impl Tile
 			has_gem: false,
 			demon_policy: MoveUp,
 			demon_value: INFINITY,
+			light: 0.0,
 		}
 	}
 
@@ -164,6 +170,23 @@ impl Tile
 			has_gem: false,
 			demon_policy: MoveUp,
 			demon_value: INFINITY,
+			light: 0.0,
+		}
+	}
+
+	pub fn surface() -> Tile
+	{
+		Tile
+		{
+			collision: Solid,
+			tile_type: Surface,
+			health: TILE_HEALTH,
+			support: 4.0,
+			fall_state: 0,
+			has_gem: false,
+			demon_policy: MoveUp,
+			demon_value: INFINITY,
+			light: 0.0,
 		}
 	}
 
@@ -179,6 +202,7 @@ impl Tile
 			has_gem: false,
 			demon_policy: MoveUp,
 			demon_value: INFINITY,
+			light: 0.0,
 		}
 	}
 
@@ -194,6 +218,7 @@ impl Tile
 			has_gem: task_rng().gen_weighted_bool(5),
 			demon_policy: MoveUp,
 			demon_value: INFINITY,
+			light: 0.0,
 		}
 	}
 	
@@ -209,6 +234,7 @@ impl Tile
 			has_gem: false,
 			demon_policy: MoveUp,
 			demon_value: INFINITY,
+			light: 0.0,
 		}
 	}
 }
@@ -218,7 +244,8 @@ pub struct World
 	width: uint,
 	height: uint,
 	tiles: Vec<Tile>,
-	world_changed: bool,
+	need_new_policy: bool,
+	pub need_new_light: bool,
 	old_player_tx: uint,
 	old_player_ty: uint,
 	policy_done: bool // if false, then we have a policy that is not yet converged
@@ -233,7 +260,7 @@ impl World
 		let mut tiles = Vec::with_capacity(width * height);
 		for row in range(0, height)
 		{
-			for col in range(0, width)
+			for _ in range(0, width)
 			{
 				tiles.push
 				(
@@ -241,21 +268,17 @@ impl World
 					{
 						Tile::bottom()
 					}
-					else if col == 7
+					else if row == SURFACE_HEIGHT as uint
 					{
-						Tile::support()
+						Tile::surface()
 					}
-					else if row < 10
+					else if row < SURFACE_HEIGHT as uint
 					{
 						Tile::sky()
-					}
-					else if row + col > 15
-					{
-						Tile::ground()
 					}
 					else
 					{
-						Tile::sky()
+						Tile::ground()
 					}
 				);
 			}
@@ -266,7 +289,8 @@ impl World
 			width: width,
 			height: height,
 			tiles: tiles,
-			world_changed: true,
+			need_new_policy: true,
+			need_new_light: true,
 			old_player_tx: 0,
 			old_player_ty: 0,
 			policy_done: true, // Has to be true, since we have no running policy yet
@@ -300,7 +324,7 @@ impl World
 					{
 						let center = (x as i32 * TILE_SIZE + TILE_SIZE / 2, y as i32 * TILE_SIZE + TILE_SIZE / 2);
 						
-						*self.get_tile_mut(x, y) = Tile::sky();
+						*self.get_tile_mut(x, y) = Tile::cave();
 						
 						if add_gem
 						{
@@ -322,7 +346,7 @@ impl World
 				gem_callback(num_demons > 0, *gem_spot);
 			}
 			
-			println!("Cave: {} {}, demons: {}", cave_x, cave_y, num_demons);
+			//~ println!("Cave: {} {}, demons: {}", cave_x, cave_y, num_demons);
 		}
 	}
 	
@@ -353,17 +377,31 @@ impl World
 				
 				let x = (tx as i32 * sz - camera.x) as f32;
 				let y = (ty as i32 * sz - camera.y + tile.fall_state) as f32;
-				if tile.collision == Solid
+				
+				let l = (0.1 + 0.9 * tile.light).min(1.0);
+				
+				let color = match tile.tile_type
 				{
-					let g = 0.5 * tile.health as f32 / TILE_HEALTH as f32;
-					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(g, g, g));
-					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
-				}
-				else if tile.collision == Support
-				{
-					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(0.5, 1.0, 1.0));
-					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
-				}
+					Sky => core.map_rgb_f(0.0, 0.2, 0.8),
+					Surface => core.map_rgb_f(0.0, 0.8, 0.1),
+					Bottom | CaveCeiling | Ground => core.map_rgb_f(0.5 * l, 0.1 * l, 0.0),
+					Cave => core.map_rgb_f(0.10 * l, 0.0, 0.10 * l),
+					SupportType => core.map_rgb_f(0.5 * l, 0.1 * l, 0.5 * l),
+				};
+				
+				prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, color);
+				
+				//~ if tile.collision == Solid
+				//~ {
+					//~ let g = 0.5 * tile.health as f32 / TILE_HEALTH as f32;
+					//~ prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(g, g, g));
+					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+				//~ }
+				//~ else if tile.collision == Support
+				//~ {
+					//~ prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(0.5, 1.0, 1.0));
+					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+				//~ }
 				
 				if tile.collision != Solid
 				{
@@ -374,14 +412,16 @@ impl World
 		}
 	}
 	
-	pub fn update(&mut self, camera: &mut Camera, player_x: i32, player_y: i32, player_w: i32, player_h: i32)
+	pub fn update(&mut self, camera: &mut Camera, torches: &[Torch], player_x: i32, player_y: i32, player_w: i32, player_h: i32)
 	{
 		for y in range(1, self.height - 1).rev()
 		{
 			for x in range(0, self.width)
 			{
 				// Deal with supports
-				if self.get_tile(x, y).collision != Empty && self.get_tile(x, y).tile_type != CaveCeiling
+				if self.get_tile(x, y).collision != Empty &&
+				   self.get_tile(x, y).tile_type != CaveCeiling &&
+				   self.get_tile(x, y).tile_type != Surface
 				{
 					let mut sup = 0.0f32;
 					let mut num_supports = 0;
@@ -420,7 +460,8 @@ impl World
 							tile.fall_state = -TILE_SIZE;
 							*self.get_tile_mut(x, y) = Tile::cave();
 							*self.get_tile_mut(x, y + 1) = tile;
-							self.world_changed = true;
+							self.need_new_policy = true;
+							self.need_new_light = true;
 						}
 					}
 					else
@@ -445,6 +486,57 @@ impl World
 			}
 		}
 		
+		// Deal with lights
+		if self.need_new_light
+		{
+			// Darken under-surface
+			for y in range(SURFACE_HEIGHT as uint, self.height)
+			{
+				for x in range(0, self.width)
+				{
+					self.get_tile_mut(x, y).light = 0.0;
+				}
+			}
+			
+			// Surface lights
+			for x in range(0, self.width)
+			{
+				self.light_ray(x, SURFACE_HEIGHT as uint - 1, x, SURFACE_HEIGHT as uint + 5);
+			}
+			
+			for torch in torches.iter()
+			{
+				self.get_tile_coords(torch.x, torch.y).map(|(tx, ty)|
+				{
+					let x1 = max(tx as i32 - 5, 0) as uint;
+					let y1 = max(ty as i32 - 5, 0) as uint;
+					let x2 = min(tx as i32 + 5, self.width as i32 - 1) as uint;
+					let y2 = min(ty as i32 + 5, self.height as i32 - 1) as uint;
+					
+					for x in range(x1, x2 + 1)
+					{
+						self.light_ray(tx, ty, x, y1);
+					}
+
+					for x in range(x1, x2 + 1).rev()
+					{
+						self.light_ray(tx, ty, x, y2);
+					}
+
+					for y in range(y1 + 1, y2)
+					{
+						self.light_ray(tx, ty, x1, y);
+					}
+
+					for y in range(y1 + 1, y2)
+					{
+						self.light_ray(tx, ty, x2, y);
+					}
+				});
+			}
+			self.need_new_light = false;
+		}
+		
 		// Compute the policy
 		let mut player_tx = (player_x + player_w / 2).div_floor(&TILE_SIZE);
 		let mut player_ty = (player_y + player_h / 2).div_floor(&TILE_SIZE);
@@ -459,7 +551,7 @@ impl World
 		let player_tx = player_tx as uint;
 		let player_ty = player_ty as uint;
 		
-		if self.policy_done && !self.world_changed && player_tx == self.old_player_tx && player_ty == self.old_player_ty
+		if self.policy_done && !self.need_new_policy && player_tx == self.old_player_tx && player_ty == self.old_player_ty
 		{
 			// Policy does not need changing
 			return;
@@ -543,7 +635,7 @@ impl World
 		{
 			self.policy_done = true;
 		}
-		self.world_changed = false;
+		self.need_new_policy = false;
 		//~ println!("iterations: {}", iterations);
 	}
 	
@@ -588,10 +680,62 @@ impl World
 		 (y + h / 2).div_floor(&TILE_SIZE) * TILE_SIZE + TILE_SIZE / 2)
 	}
 
-	pub fn get_demon_policy(&self, x: i32, y: i32, w: i32, h: i32) -> Option<DemonAction>
+	pub fn light_ray(&mut self, stx: uint, sty: uint, dtx: uint, dty: uint)
 	{
-		let tx = (x + w / 2).div_floor(&TILE_SIZE);
-		let ty = (y + h / 2).div_floor(&TILE_SIZE);
+		let dx = dtx as i32 - stx as i32;
+		let dy = dty as i32 - sty as i32;
+		
+		if dx == 0 && dy == 0
+		{
+			return;
+		}
+		
+		if abs(dx) > abs(dy)
+		{
+			let dx1 = if dx > 0 { 1 } else { -1 };
+			let mut x = stx as i32;
+			for delta_x in range(0, abs(dx))
+			{
+				let delta_y = dy * delta_x / dx;				
+				let y = sty as i32 + delta_y;
+				let light = (1.0 / (0.1 + (delta_x as f32) * (delta_x as f32) + (delta_y as f32) * (delta_y as f32))).min(1.0);
+				
+				let tile = self.get_tile_mut(x as uint, y as uint);
+				tile.light = tile.light.max(light);
+				if tile.collision == Solid
+				{
+					break;
+				}
+				
+				x += dx1;
+			}
+		}
+		else
+		{
+			let dy1 = if dy > 0 { 1 } else { -1 };
+			let mut y = sty as i32;
+			for delta_y in range(0, abs(dy))
+			{
+				let delta_x = dx * delta_y / dy;				
+				let x = stx as i32 + delta_x;
+				let light = (1.0 / (0.1 + (delta_x as f32) * (delta_x as f32) + (delta_y as f32) * (delta_y as f32))).min(1.0);
+				
+				let tile = self.get_tile_mut(x as uint, y as uint);
+				tile.light = tile.light.max(light);
+				if tile.collision == Solid
+				{
+					break;
+				}
+				
+				y += dy1;
+			}
+		}
+	}
+	
+	pub fn get_tile_coords(&self, x: i32, y: i32) -> Option<(uint, uint)>
+	{
+		let tx = x.div_floor(&TILE_SIZE);
+		let ty = y.div_floor(&TILE_SIZE);
 		if tx < 0 || tx >= self.width as i32 ||
 		   ty < 0 || ty >= self.height as i32
 		{
@@ -599,7 +743,15 @@ impl World
 		}
 		else
 		{
-			let tile = self.get_tile(tx as uint, ty as uint);
+			Some((tx as uint, ty as uint))
+		}
+	}
+
+	pub fn get_demon_policy(&self, x: i32, y: i32) -> Option<DemonAction>
+	{
+		self.get_tile_coords(x, y).map_or(None, |(tx, ty)|
+		{
+			let tile = self.get_tile(tx, ty);
 			if tile.demon_value < INFINITY
 			{
 				Some(tile.demon_policy)
@@ -608,7 +760,7 @@ impl World
 			{
 				None
 			}
-		}
+		})
 	}
 
 	pub fn colliding(&self, x: i32, y: i32, w: i32, h: i32) -> bool
@@ -694,6 +846,14 @@ impl World
 
 		(x, y)
 	}
+	
+	pub fn get_light(&self, x: i32, y: i32) -> f32
+	{
+		self.get_tile_coords(x, y).map_or(1.0, |(tx, ty)|
+		{
+			self.get_tile(tx, ty).light
+		})
+	}
 
 	pub fn place_support(&mut self, x: i32, y: i32) -> bool
 	{
@@ -707,9 +867,11 @@ impl World
 			{
 				let old_value = tile.demon_value;
 				let old_policy = tile.demon_policy;
+				let old_light = tile.light;
 				*tile = Tile::support();
 				tile.demon_value = old_value;
 				tile.demon_policy = old_policy;
+				tile.light = old_light;
 				true
 			}
 			else
@@ -728,17 +890,16 @@ impl World
 		let tx = (x + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dtx;
 		let ty = (y + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dty;
 		
-		let mut world_changed = false;
+		let mut removed = false;
 		
 		let ret = if tx >= 0 && tx < self.width as i32 && ty >= 0 && ty < self.height as i32
 		{
 			let tile = self.get_tile_mut(tx as uint, ty as uint);
 			
-			if tile.tile_type == Bottom
-			{
-				None
-			}
-			else
+			if tile.tile_type == Ground ||
+			   tile.tile_type == SupportType ||
+			   tile.tile_type == Surface ||
+			   tile.tile_type == CaveCeiling
 			{
 				tile.health -= 10;
 				if tile.health <= 0
@@ -751,8 +912,8 @@ impl World
 					{
 						None
 					};
-					*tile = Tile::sky();
-					world_changed = true;
+					*tile = Tile::cave();
+					removed = true;
 					ret
 				}
 				else
@@ -760,15 +921,20 @@ impl World
 					None
 				}
 			}
+			else
+			{
+				None
+			}
 		}
 		else
 		{
 			None
 		};
 		
-		if world_changed
+		if removed
 		{
-			self.world_changed = true;
+			self.need_new_policy = true;
+			self.need_new_light = true;
 		}
 		
 		ret

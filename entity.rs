@@ -141,7 +141,7 @@ impl Entity
 		}
 	}
 
-	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, camera: &Camera)
+	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, world: &World, camera: &Camera)
 	{
 		if self.dead
 		{
@@ -149,6 +149,9 @@ impl Entity
 		}
 		let x = (self.x - camera.x) as f32;
 		let y = (self.y - camera.y) as f32;
-		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(0.7, 0.0, 0.5));
+		
+		let l = world.get_light(self.x + self.w / 2, self.y + self.h / 2);
+		
+		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(l * 0.7, 0.0, l * 0.5));
 	}
 }

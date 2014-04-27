@@ -24,6 +24,7 @@ use camera::Camera;
 use entity::Entity;
 use gem::{Gem, Purple};
 use demon::Demon;
+use torch::Torch;
 
 mod camera;
 mod world;
@@ -31,6 +32,7 @@ mod entity;
 mod gem;
 mod util;
 mod demon;
+mod torch;
 
 allegro_main!
 {
@@ -65,6 +67,7 @@ allegro_main!
 	
 	let mut gems: Vec<Gem> = Vec::new();
 	let mut demons: Vec<Demon> = Vec::new();
+	let mut torches: Vec<Torch> = Vec::new();
 	
 	demons.push(Demon::new(128, 128));
 	
@@ -75,7 +78,7 @@ allegro_main!
 	},
 	|rare, (x, y)|
 	{
-		println!("rare: {}, x: {}, y: {}", rare, x, y);
+		//~ println!("rare: {}, x: {}, y: {}", rare, x, y);
 		gems.push(if rare
 		{
 			Gem::with_color(x, y, Purple)
@@ -93,7 +96,8 @@ allegro_main!
 	let mut mine_left = false;
 	let mut mine_right = false;
 	let mut place_support = false;
-	let mut gem_count = 10i32;
+	let mut place_torch = false;
+	let mut gem_count = 20i32;
 	
 	let mut redraw = true;
 	timer.start();
@@ -103,9 +107,16 @@ allegro_main!
 		{
 			core.set_target_bitmap(&buffer);
 			core.clear_to_color(black);
-			world.draw(&core, &prim, &font, &camera);
-			player.draw(&core, &prim, &camera);
 			
+			world.draw(&core, &prim, &font, &camera);
+			
+			for t in torches.iter()
+			{
+				t.draw(&core, &prim, &camera);
+			}
+			
+			player.draw(&core, &prim, &world, &camera);
+
 			for e in gems.iter()
 			{
 				e.draw(&core, &prim, &camera);
@@ -113,7 +124,7 @@ allegro_main!
 
 			for d in demons.iter()
 			{
-				d.draw(&core, &prim, &camera);
+				d.draw(&core, &prim, &world, &camera);
 			}
 			
 			core.draw_text(&font, white, 10.0, 10.0, AlignLeft, format!("Gems: {}", gem_count));
@@ -143,7 +154,8 @@ allegro_main!
 					key::D => mine_right = true,
 					key::W => mine_up = true,
 					key::S => mine_down = true,
-					key::F => place_support = true,
+					key::R => place_support = true,
+					key::T => place_torch = true,
 					key::Space => player.jump(&world),
 					_ => ()
 				}
@@ -160,7 +172,8 @@ allegro_main!
 					key::D => mine_right = false,
 					key::W => mine_up = false,
 					key::S => mine_down = false,
-					key::F => place_support = false,
+					key::R => place_support = false,
+					key::T => place_torch = false,
 					_ => ()
 				}
 			},
@@ -185,8 +198,19 @@ allegro_main!
 					d.update(&world, player.x, player.y, player.w, player.h);
 				}
 				demons.retain(|d| !d.dead);
+
+				for t in torches.mut_iter()
+				{
+					t.update(&world);
+				}
+				let old_len = torches.len();
+				torches.retain(|d| !d.dead);
+				if torches.len() != old_len
+				{
+					world.need_new_light = true;
+				}
 				
-				world.update(&mut camera, player.x, player.y, player.w, player.h);
+				world.update(&mut camera, torches.as_slice(), player.x, player.y, player.w, player.h);
 				camera.update(player.x, player.y);
 				//~ println!("{} {}", player.x, player.y);
 				
@@ -208,13 +232,23 @@ allegro_main!
 						gems.push(Gem::new(x, y));
 					});
 					
-					if place_support && gem_count > 0
+					if place_support && gem_count > 1
 					{
 						if world.place_support(player.x, player.y)
 						{
-							gem_count -= 1;
+							gem_count -= 2;
 						}
 					}
+
+					if place_torch && gem_count > 0
+					{
+						if Torch::place_torch(&world, &mut torches, player.x, player.y, player.w, player.h)
+						{
+							gem_count -= 1;
+							world.need_new_light = true;
+						}
+					}
+					
 				}
 				
 				let _end = time::precise_time_ns();
