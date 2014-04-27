@@ -11,6 +11,7 @@ extern crate allegro_ttf;
 extern crate allegro_primitives;
 extern crate num;
 extern crate rand;
+extern crate time;
 
 use allegro5::*;
 use allegro_image::*;
@@ -21,13 +22,15 @@ use allegro_primitives::*;
 use world::World;
 use camera::Camera;
 use entity::Entity;
-use gem::Gem;
+use gem::{Gem, Purple};
+use demon::Demon;
 
 mod camera;
 mod world;
 mod entity;
 mod gem;
 mod util;
+mod demon;
 
 allegro_main!
 {
@@ -56,11 +59,32 @@ allegro_main!
 	let black = core.map_rgb_f(0.0, 0.0, 0.0);
 	let white = core.map_rgb_f(1.0, 1.0, 1.0);
 	
-	let mut world = World::new(30, 30);
+	let mut world = World::new(30, 120);
 	let mut camera = Camera::new(dw / 2, dh / 2, world.get_pixel_width(), world.get_pixel_height());
 	let mut player = Entity::player(20, 20);
 	
 	let mut gems: Vec<Gem> = Vec::new();
+	let mut demons: Vec<Demon> = Vec::new();
+	
+	demons.push(Demon::new(128, 128));
+	
+	world.add_caves(
+	|(x, y)|
+	{
+		demons.push(Demon::new(x, y))
+	},
+	|rare, (x, y)|
+	{
+		println!("rare: {}, x: {}, y: {}", rare, x, y);
+		gems.push(if rare
+		{
+			Gem::with_color(x, y, Purple)
+		}
+		else
+		{
+			Gem::new(x, y)
+		});
+	});
 	
 	let buffer = core.create_bitmap(dw / 2, dh / 2).unwrap();
 	
@@ -85,6 +109,11 @@ allegro_main!
 			for e in gems.iter()
 			{
 				e.draw(&core, &prim, &camera);
+			}
+
+			for d in demons.iter()
+			{
+				d.draw(&core, &prim, &camera);
 			}
 			
 			core.draw_text(&font, white, 10.0, 10.0, AlignLeft, format!("Gems: {}", gem_count));
@@ -137,6 +166,7 @@ allegro_main!
 			},
 			TimerTick{..} =>
 			{
+				let _start = time::precise_time_ns();
 				player.update(&world);
 				
 				for g in gems.mut_iter()
@@ -148,14 +178,21 @@ allegro_main!
 				{
 					gem_count += g.update(&world, player.x, player.y, player.w, player.h);
 				}
-				
 				gems.retain(|g| !g.dead);
+
+				for d in demons.mut_iter()
+				{
+					d.update(&world, player.x, player.y, player.w, player.h);
+				}
+				demons.retain(|d| !d.dead);
 				
-				world.update(&mut camera);
+				world.update(&mut camera, player.x, player.y, player.w, player.h);
 				camera.update(player.x, player.y);
 				//~ println!("{} {}", player.x, player.y);
 				
-				if world.on_ground(player.x, player.y, player.w, player.h) || world.on_support(player.x, player.y, player.w, player.h) && player.vx == 0 && player.vy == 0
+				if !player.dead &&
+				   (world.on_ground(player.x, player.y, player.w, player.h) || world.on_support(player.x, player.y, player.w, player.h)) &&
+				    player.vx == 0 && player.vy == 0
 				{
 					let spawn_gem = match (mine_left, mine_right, mine_up, mine_down)
 					{
@@ -179,6 +216,10 @@ allegro_main!
 						}
 					}
 				}
+				
+				let _end = time::precise_time_ns();
+				
+				//~ println!("Update duration (ms): {}", (end - start) as f64 / 1e6);
 				
 				redraw = true;
 			},

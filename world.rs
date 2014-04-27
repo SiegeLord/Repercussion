@@ -7,9 +7,86 @@ use std::num::abs;
 use camera::Camera;
 use num::Integer;
 use rand::{task_rng, Rng};
+use std::f32::INFINITY;
+use std::fmt;
 
 pub static TILE_SIZE: i32 = 32;
 pub static TILE_HEALTH: i32 = 32;
+pub static MAX_ITERATIONS: i32 = 10;
+
+#[deriving(Eq, Clone)]
+#[repr(C)]
+pub enum DemonAction
+{
+	MoveUp,
+	MoveDown,
+	MoveLeft,
+	MoveRight,
+}
+
+struct DemonActionIterator
+{
+	action: DemonAction,
+	count: u8
+}
+
+impl Iterator<DemonAction> for DemonActionIterator
+{
+	fn next(&mut self) -> Option<DemonAction>
+	{
+		let old = self.action;
+		self.action = match old
+		{
+			MoveUp => MoveDown,
+			MoveDown => MoveLeft,
+			MoveLeft => MoveRight,
+			MoveRight => MoveUp,
+		};
+		
+		if self.count == 0
+		{
+			None
+		}
+		else
+		{
+			self.count -= 1;
+			Some(old)
+		}
+	}
+}
+
+impl DemonAction
+{
+	pub fn get_shift(&self) -> (i32, i32)
+	{
+		match *self
+		{
+			MoveUp => (0, -1),
+			MoveDown => (0, 1),
+			MoveLeft => (-1, 0),
+			MoveRight => (1, 0),
+		}
+	}
+
+	pub fn iter() -> DemonActionIterator
+	{
+		DemonActionIterator{ action: MoveUp, count: 4 }
+	}
+}
+
+impl fmt::Show for DemonAction
+{
+	fn fmt(&self, buf: &mut fmt::Formatter) -> fmt::Result
+	{
+		match *self
+		{
+			MoveUp => write!(buf.buf, "^"),
+			MoveDown => write!(buf.buf, "v"),
+			MoveLeft => write!(buf.buf, "<"),
+			MoveRight => write!(buf.buf, ">"),
+		}
+	}
+}
 
 #[deriving(Eq, Clone)]
 enum TileCollision
@@ -19,36 +96,120 @@ enum TileCollision
 	Support
 }
 
+#[deriving(Eq, Clone)]
+enum TileType
+{
+	Sky,
+	Ground,
+	CaveCeiling,
+	Cave,
+	SupportType,
+	Bottom,
+}
+
 #[deriving(Clone)]
 pub struct Tile
 {
 	collision: TileCollision,
+	tile_type: TileType,
 	health: i32,
 	support: f32,
 	fall_state: i32,
 	has_gem: bool,
+	demon_value: f32,
+	demon_policy: DemonAction,
 }
 
 impl Tile
 {
 	pub fn sky() -> Tile
 	{
-		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0, has_gem: false }
+		Tile
+		{
+			collision: Empty,
+			tile_type: Sky,
+			health: TILE_HEALTH,
+			support: 0.0,
+			fall_state: 0,
+			has_gem: false,
+			demon_policy: MoveUp,
+			demon_value: INFINITY,
+		}
 	}
 
 	pub fn cave() -> Tile
 	{
-		Tile{ collision: Empty, health: TILE_HEALTH, support: 0.0, fall_state: 0, has_gem: false }
+		Tile
+		{
+			collision: Empty,
+			tile_type: Cave,
+			health: TILE_HEALTH,
+			support: 0.0,
+			fall_state: 0,
+			has_gem: false,
+			demon_policy: MoveUp,
+			demon_value: INFINITY,
+		}
+	}
+
+	pub fn cave_ceil() -> Tile
+	{
+		Tile
+		{
+			collision: Solid,
+			tile_type: CaveCeiling,
+			health: TILE_HEALTH,
+			support: 4.0,
+			fall_state: 0,
+			has_gem: false,
+			demon_policy: MoveUp,
+			demon_value: INFINITY,
+		}
+	}
+
+	pub fn bottom() -> Tile
+	{
+		Tile
+		{
+			collision: Solid,
+			tile_type: Bottom,
+			health: TILE_HEALTH,
+			support: 4.0,
+			fall_state: 0,
+			has_gem: false,
+			demon_policy: MoveUp,
+			demon_value: INFINITY,
+		}
 	}
 
 	pub fn ground() -> Tile
 	{
-		Tile{ collision: Solid, health: TILE_HEALTH, support: 4.0, fall_state: 0, has_gem: task_rng().gen_weighted_bool(5) }
+		Tile
+		{
+			collision: Solid,
+			tile_type: Ground,
+			health: TILE_HEALTH,
+			support: 4.0,
+			fall_state: 0,
+			has_gem: task_rng().gen_weighted_bool(5),
+			demon_policy: MoveUp,
+			demon_value: INFINITY,
+		}
 	}
 	
 	pub fn support() -> Tile
 	{
-		Tile{ collision: Support, health: TILE_HEALTH, support: 4.0, fall_state: 0, has_gem: false }
+		Tile
+		{
+			collision: Support,
+			health: TILE_HEALTH,
+			tile_type: SupportType,
+			support: 4.0,
+			fall_state: 0,
+			has_gem: false,
+			demon_policy: MoveUp,
+			demon_value: INFINITY,
+		}
 	}
 }
 
@@ -57,12 +218,18 @@ pub struct World
 	width: uint,
 	height: uint,
 	tiles: Vec<Tile>,
+	world_changed: bool,
+	old_player_tx: uint,
+	old_player_ty: uint,
+	policy_done: bool // if false, then we have a policy that is not yet converged
 }
 
 impl World
 {
 	pub fn new(width: uint, height: uint) -> World
 	{
+		assert!(width > 10);
+		assert!(height > 10);
 		let mut tiles = Vec::with_capacity(width * height);
 		for row in range(0, height)
 		{
@@ -70,7 +237,11 @@ impl World
 			{
 				tiles.push
 				(
-					if col == 7
+					if row == height - 1
+					{
+						Tile::bottom()
+					}
+					else if col == 7
 					{
 						Tile::support()
 					}
@@ -95,6 +266,63 @@ impl World
 			width: width,
 			height: height,
 			tiles: tiles,
+			world_changed: true,
+			old_player_tx: 0,
+			old_player_ty: 0,
+			policy_done: true, // Has to be true, since we have no running policy yet
+		}
+	}
+	
+	pub fn add_caves(&mut self, demon_callback: |(i32, i32)|, gem_callback: |bool, (i32, i32)|)
+	{
+		for _ in range(0, 30)
+		{
+			let cave_y = task_rng().gen_range(20, self.height - 6);
+			let cave_width = task_rng().gen_range(2, 5u);
+			let cave_x = task_rng().gen_range(0, self.width - cave_width);
+			
+			let mut num_demons = 0;
+			let mut gem_spots = Vec::new();
+			
+			for x in range(cave_x, cave_x + cave_width)
+			{
+				let y1 = task_rng().gen_range(cave_y - 3, cave_y);
+				let y2 = y1 + task_rng().gen_range(3, 5u);
+				let mut add_gem = task_rng().gen_weighted_bool(2);
+				
+				for y in range(y1, y2)
+				{
+					if y == y1
+					{
+						*self.get_tile_mut(x, y) = Tile::cave_ceil();
+					}
+					else
+					{
+						let center = (x as i32 * TILE_SIZE + TILE_SIZE / 2, y as i32 * TILE_SIZE + TILE_SIZE / 2);
+						
+						*self.get_tile_mut(x, y) = Tile::sky();
+						
+						if add_gem
+						{
+							gem_spots.push(center);
+							add_gem = false;
+						}
+						
+						if !task_rng().gen_weighted_bool(cave_y / 30)
+						{
+							num_demons += 1;
+							demon_callback(center);
+						}
+					}
+				}
+			}
+			
+			for gem_spot in gem_spots.iter()
+			{
+				gem_callback(num_demons > 0, *gem_spot);
+			}
+			
+			println!("Cave: {} {}, demons: {}", cave_x, cave_y, num_demons);
 		}
 	}
 	
@@ -129,24 +357,31 @@ impl World
 				{
 					let g = 0.5 * tile.health as f32 / TILE_HEALTH as f32;
 					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(g, g, g));
-					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
 				}
 				else if tile.collision == Support
 				{
 					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(0.5, 1.0, 1.0));
-					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+				}
+				
+				if tile.collision != Solid
+				{
+					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.demon_policy));
+					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y + 8.0, AlignLeft, format!("{}", tile.demon_value));
 				}
 			}
 		}
 	}
 	
-	pub fn update(&mut self, camera: &mut Camera)
+	pub fn update(&mut self, camera: &mut Camera, player_x: i32, player_y: i32, player_w: i32, player_h: i32)
 	{
 		for y in range(1, self.height - 1).rev()
 		{
 			for x in range(0, self.width)
 			{
-				if self.get_tile(x, y).collision != Empty
+				// Deal with supports
+				if self.get_tile(x, y).collision != Empty && self.get_tile(x, y).tile_type != CaveCeiling
 				{
 					let mut sup = 0.0f32;
 					if x > 0
@@ -172,6 +407,7 @@ impl World
 							tile.fall_state = -TILE_SIZE;
 							*self.get_tile_mut(x, y) = Tile::cave();
 							*self.get_tile_mut(x, y + 1) = tile;
+							self.world_changed = true;
 						}
 					}
 					else
@@ -195,6 +431,107 @@ impl World
 				}
 			}
 		}
+		
+		// Compute the policy
+		let mut player_tx = (player_x + player_w / 2).div_floor(&TILE_SIZE);
+		let mut player_ty = (player_y + player_h / 2).div_floor(&TILE_SIZE);
+		
+		if player_tx < 0 || player_tx >= self.width as i32 || player_ty < 0 || player_ty >= self.height as i32
+		{
+			// Something's wrong
+			player_tx = 0;
+			player_ty = 0;
+		}
+		
+		let player_tx = player_tx as uint;
+		let player_ty = player_ty as uint;
+		
+		if self.policy_done && !self.world_changed && player_tx == self.old_player_tx && player_ty == self.old_player_ty
+		{
+			// Policy does not need changing
+			return;
+		}
+		self.old_player_tx = player_tx;
+		self.old_player_ty = player_ty;
+		
+		if self.policy_done
+		{
+			// First clear the values
+			for y in range(0, self.height)
+			{
+				for x in range(0, self.width)
+				{
+					if self.get_tile(x, y).collision == Solid
+					{
+						continue;
+					}
+					self.get_tile_mut(x, y).demon_value = INFINITY;
+				}
+			}
+			
+			self.get_tile_mut(player_tx, player_ty).demon_value = 0.0;
+		}
+		
+		let mut iterations = 0;
+		let mut changed = true;
+		while changed
+		{
+			iterations += 1;
+			if iterations > MAX_ITERATIONS
+			{
+				self.policy_done = false;
+				break;
+			}
+			changed = false;
+			for y in range(0, self.height)
+			{
+				for x in range(0, self.width)
+				{
+					if self.get_tile(x, y).collision == Solid
+					{
+						continue;
+					}
+					
+					if x == player_tx && y == player_ty && self.get_tile(x, y).demon_value != 0.0
+					{
+						self.get_tile_mut(x, y).demon_value = 0.0;
+						changed = true;
+						continue;
+					}
+					
+					for a in DemonAction::iter()
+					{
+						let (dx, dy) = a.get_shift();
+						
+						let nx = (x as i32) + dx;
+						let ny = (y as i32) + dy;
+						
+						if nx >= 0 && nx < self.width as i32 && ny >= 0 && ny < self.height as i32
+						{
+							let nx = nx as uint;
+							let ny = ny as uint;
+							if self.get_tile(nx, ny).collision != Solid
+							{
+								let new_value = self.get_tile(nx, ny).demon_value + 1.0;
+								if new_value < self.get_tile(x, y).demon_value
+								{
+									let tile = self.get_tile_mut(x, y);
+									tile.demon_policy = a;
+									tile.demon_value = new_value;
+									changed = true;
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if changed == false
+		{
+			self.policy_done = true;
+		}
+		self.world_changed = false;
+		//~ println!("iterations: {}", iterations);
 	}
 	
 	pub fn get_tile<'l>(&'l self, tx: uint, ty: uint) -> &'l Tile
@@ -229,6 +566,35 @@ impl World
 				self.get_tile(tx2 as uint, ty1 as uint).collision == coll ||
 				self.get_tile(tx2 as uint, ty2 as uint).collision == coll
 			)
+		}
+	}
+
+	pub fn get_tile_center(&self, x: i32, y: i32, w: i32, h: i32) -> (i32, i32)
+	{
+		((x + w / 2).div_floor(&TILE_SIZE) * TILE_SIZE + TILE_SIZE / 2,
+		 (y + h / 2).div_floor(&TILE_SIZE) * TILE_SIZE + TILE_SIZE / 2)
+	}
+
+	pub fn get_demon_policy(&self, x: i32, y: i32, w: i32, h: i32) -> Option<DemonAction>
+	{
+		let tx = (x + w / 2).div_floor(&TILE_SIZE);
+		let ty = (y + h / 2).div_floor(&TILE_SIZE);
+		if tx < 0 || tx >= self.width as i32 ||
+		   ty < 0 || ty >= self.height as i32
+		{
+			None
+		}
+		else
+		{
+			let tile = self.get_tile(tx as uint, ty as uint);
+			if tile.demon_value < INFINITY
+			{
+				Some(tile.demon_policy)
+			}
+			else
+			{
+				None
+			}
 		}
 	}
 
@@ -326,7 +692,11 @@ impl World
 			let tile = self.get_tile_mut(tx as uint, ty as uint);
 			if tile.collision == Empty
 			{
+				let old_value = tile.demon_value;
+				let old_policy = tile.demon_policy;
 				*tile = Tile::support();
+				tile.demon_value = old_value;
+				tile.demon_policy = old_policy;
 				true
 			}
 			else
@@ -345,31 +715,49 @@ impl World
 		let tx = (x + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dtx;
 		let ty = (y + TILE_SIZE / 2).div_floor(&TILE_SIZE) + dty;
 		
-		if tx >= 0 && tx < self.width as i32 && ty >= 0 && ty < self.height as i32
+		let mut world_changed = false;
+		
+		let ret = if tx >= 0 && tx < self.width as i32 && ty >= 0 && ty < self.height as i32
 		{
 			let tile = self.get_tile_mut(tx as uint, ty as uint);
-			tile.health -= 1;
-			if tile.health <= 0
+			
+			if tile.tile_type == Bottom
 			{
-				let ret = if tile.has_gem
+				None
+			}
+			else
+			{
+				tile.health -= 10;
+				if tile.health <= 0
 				{
-					Some((tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2))
+					let ret = if tile.has_gem
+					{
+						Some((tx * TILE_SIZE + TILE_SIZE / 2, ty * TILE_SIZE + TILE_SIZE / 2))
+					}
+					else
+					{
+						None
+					};
+					*tile = Tile::sky();
+					world_changed = true;
+					ret
 				}
 				else
 				{
 					None
-				};
-				*tile = Tile::sky();
-				ret
-			}
-			else
-			{
-				None
+				}
 			}
 		}
 		else
 		{
 			None
+		};
+		
+		if world_changed
+		{
+			self.world_changed = true;
 		}
+		
+		ret
 	}
 }

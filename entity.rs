@@ -8,7 +8,8 @@ use camera::Camera;
 
 pub enum EntityType
 {
-	Player
+	Player,
+	Demon
 }
 
 pub struct Entity
@@ -22,6 +23,7 @@ pub struct Entity
 	pub want_left: bool,
 	pub want_up: bool,
 	pub want_down: bool,
+	pub dead: bool,
 	
 	pub max_vx: i32,
 	pub w: i32,
@@ -47,12 +49,24 @@ impl Entity
 			want_left: false,
 			want_up: false,
 			want_down: false,
-			entity_type: Player
+			entity_type: Player,
+			dead: false,
 		}
 	}
 	
 	pub fn update(&mut self, world: &World)
 	{
+		if self.dead
+		{
+			return;
+		}
+		
+		if world.colliding(self.x, self.y, self.w, self.h)
+		{
+			self.dead = true;
+			return;
+		}
+		
 		if self.want_right
 		{
 			self.ax = 1;
@@ -129,6 +143,10 @@ impl Entity
 
 	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, camera: &Camera)
 	{
+		if self.dead
+		{
+			return;
+		}
 		let x = (self.x - camera.x) as f32;
 		let y = (self.y - camera.y) as f32;
 		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(0.7, 0.0, 0.5));
