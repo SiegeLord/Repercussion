@@ -1,5 +1,4 @@
 use allegro5::*;
-use allegro_primitives::*;
 
 //~ use std::cmp::{max, min};
 use std::num::abs;
@@ -7,6 +6,7 @@ use std::num::abs;
 use world::{World, TILE_SIZE};
 use camera::Camera;
 use util::intersect_rect;
+use gfx::Gfx;
 
 pub struct Demon
 {
@@ -149,7 +149,7 @@ impl Demon
 		false
 	}
 
-	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, world: &World, camera: &Camera)
+	pub fn draw(&self, gfx: &Gfx, core: &Core, world: &World, camera: &Camera)
 	{
 		if self.dead
 		{
@@ -159,12 +159,13 @@ impl Demon
 		{
 			return;
 		}
-		let x = (self.x - camera.x) as f32;
-		let y = (self.y - camera.y) as f32;
+		let x = self.x - camera.x;
+		let y = self.y - camera.y;
 		
 		let l = world.get_light(self.x + self.w / 2, self.y + self.h / 2);
 		
-		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(l * 0.7, 0.0, 0.0));
+		gfx.fun.draw_tinted(core, x, y, core.map_rgb_f(l, l, l));
+		gfx.fun_hi.draw(core, x, y);
 	}
 }
 

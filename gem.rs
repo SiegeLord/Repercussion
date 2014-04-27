@@ -1,5 +1,4 @@
 use allegro5::*;
-use allegro_primitives::*;
 
 use rand::distributions::{Weighted, WeightedChoice, IndependentSample};
 use rand::task_rng;
@@ -9,6 +8,7 @@ use rand::task_rng;
 use world::World;
 use camera::Camera;
 use util::intersect_rect;
+use gfx::Gfx;
 
 #[deriving(Eq, Clone)]
 pub enum GemColor
@@ -137,15 +137,17 @@ impl Gem
 		}
 	}
 
-	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, camera: &Camera)
+	pub fn draw(&self, gfx: &Gfx, core: &Core, camera: &Camera)
 	{
 		if self.dead
 		{
 			return;
 		}
 		
-		let x = (self.x - camera.x) as f32;
-		let y = (self.y - camera.y) as f32;
-		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, self.color.get_color(core));
+		let x = self.x - camera.x;
+		let y = self.y - camera.y;
+		
+		gfx.gem.draw_tinted(core, x, y, self.color.get_color(core));
+		gfx.gem_hi.draw(core, x, y);
 	}
 }

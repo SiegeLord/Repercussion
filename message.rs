@@ -1,8 +1,9 @@
 use allegro5::*;
-use allegro_primitives::*;
 use allegro_font::*;
 
 use std::cmp::{max, min};
+
+use gfx::Gfx;
 
 pub struct Message
 {
@@ -121,7 +122,7 @@ impl Message
 		}
 	}
 	
-	pub fn draw(&self, dw: i32, dh: i32, core: &Core, prim: &PrimitivesAddon, font: &Font)
+	pub fn draw(&self, gfx: &Gfx, dw: i32, dh: i32, core: &Core, font: &Font)
 	{
 		let mut chars_left = self.progress;
 
@@ -131,8 +132,17 @@ impl Message
 		}
 		else
 		{
-			(dw / 2 - 150, dh - 128)
+			(dw / 2 - 105, dh - 70)
 		};
+		
+		if self.message_type == RadioMessage
+		{
+			gfx.radio_message.draw(core, dw / 2 - 175, y - 10);
+		}
+		else if self.message_type == JohnMessage
+		{
+			gfx.john_message.draw(core, dw / 2 - 175, y - 10);
+		}
 		
 		for line in self.lines.iter()
 		{
@@ -145,6 +155,30 @@ impl Message
 			
 			y += 10;
 			chars_left -= chars_to_show;
+		}
+	}
+
+	pub fn draw_help(dw: i32, _dh: i32, core: &Core, font: &Font)
+	{
+		let help = 
+		[
+		    "Controls",
+		    "",
+		    "Arrows  - Move",
+			"W/A/S/D - Dig",
+			"Space   - Jump",
+			"R       - Place support",
+			"T       - Place torch",
+		];
+		
+		let x = dw / 2 - 80;
+		
+		let mut y = 40;
+		
+		for &line in help.iter()
+		{
+			core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x as f32, y as f32, AlignLeft, line);
+			y += 10;
 		}
 	}
 }

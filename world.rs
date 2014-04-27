@@ -1,5 +1,4 @@
 use allegro5::*;
-use allegro_primitives::*;
 use allegro_font::*;
 
 use std::cmp::{min, max};
@@ -10,6 +9,7 @@ use rand::{task_rng, Rng};
 use std::f32::INFINITY;
 use std::fmt;
 use torch::Torch;
+use sprite::Sprite;
 
 pub static TILE_SIZE: i32 = 32;
 pub static TILE_HEALTH: i32 = 32;
@@ -248,15 +248,17 @@ pub struct World
 	pub need_new_light: bool,
 	old_player_tx: uint,
 	old_player_ty: uint,
-	policy_done: bool // if false, then we have a policy that is not yet converged
+	policy_done: bool, // if false, then we have a policy that is not yet converged
+	tile_sprite: Sprite
 }
 
 impl World
 {
-	pub fn new(width: uint, height: uint) -> World
+	pub fn new(core: &Core, width: uint, height: uint) -> World
 	{
 		assert!(width > 10);
 		assert!(height > 10);
+		
 		let mut tiles = Vec::with_capacity(width * height);
 		for row in range(0, height)
 		{
@@ -294,11 +296,13 @@ impl World
 			old_player_tx: 0,
 			old_player_ty: 0,
 			policy_done: true, // Has to be true, since we have no running policy yet
+			tile_sprite: Sprite::new(core, "data/tiles.png", 32, 32)
 		}
 	}
 	
-	pub fn add_caves(&mut self, demon_callback: |(i32, i32)|, gem_callback: |bool, (i32, i32)|)
+	pub fn add_caves(&mut self, demon_callback: |(i32, i32)|, gem_callback: |bool, (i32, i32)|) -> (i32, i32)
 	{
+		let mut phil_loc = (0, 0);
 		for _ in range(0, 30)
 		{
 			let cave_y = task_rng().gen_range(20, self.height - 6);
@@ -321,8 +325,13 @@ impl World
 						*self.get_tile_mut(x, y) = Tile::cave_ceil();
 					}
 					else
-					{
+					{					
 						let center = (x as i32 * TILE_SIZE + TILE_SIZE / 2, y as i32 * TILE_SIZE + TILE_SIZE / 2);
+						
+						if center.val1() > phil_loc.val1()
+						{
+							phil_loc = center;
+						}
 						
 						*self.get_tile_mut(x, y) = Tile::cave();
 						
@@ -348,6 +357,8 @@ impl World
 			
 			//~ println!("Cave: {} {}, demons: {}", cave_x, cave_y, num_demons);
 		}
+		//~ println!("Phil at: {}", phil_loc);
+		phil_loc
 	}
 	
 	pub fn get_pixel_width(&self) -> i32
@@ -360,7 +371,7 @@ impl World
 		self.height as i32 * TILE_SIZE
 	}
 
-	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, font: &Font, camera: &Camera)
+	pub fn draw(&self, core: &Core, font: &Font, camera: &Camera)
 	{
 		let sz = TILE_SIZE;
 		let min_tx = min(max(camera.x / sz, 0) as uint, self.width);
@@ -375,21 +386,29 @@ impl World
 				let idx = ty * self.width + tx;
 				let tile = self.tiles.get(idx);
 				
-				let x = (tx as i32 * sz - camera.x) as f32;
-				let y = (ty as i32 * sz - camera.y + tile.fall_state) as f32;
+				let x = tx as i32 * sz - camera.x;
+				let y = ty as i32 * sz - camera.y + tile.fall_state;
 				
-				let l = (0.1 + 0.9 * tile.light).min(1.0);
+				let l = (0.02 + 0.98 * tile.light).min(1.0);
 				
-				let color = match tile.tile_type
+				let color = core.map_rgb_f(l, l, l);
+				
+				let damage = (TILE_HEALTH - tile.health) * 3 / TILE_HEALTH;
+				
+				let frame = match tile.tile_type
 				{
-					Sky => core.map_rgb_f(0.0, 0.2, 0.8),
-					Surface => core.map_rgb_f(0.0, 0.8, 0.1),
-					Bottom | CaveCeiling | Ground => core.map_rgb_f(0.5 * l, 0.1 * l, 0.0),
-					Cave => core.map_rgb_f(0.10 * l, 0.0, 0.10 * l),
-					SupportType => core.map_rgb_f(0.5 * l, 0.1 * l, 0.5 * l),
+					Sky => 3,
+					Surface => 4 + damage,
+					CaveCeiling => 8 + damage,
+					Bottom => 11,
+					Ground => 0 + damage,
+					Cave => 7,
+					SupportType => 12 + damage,
 				};
 				
-				prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, color);
+				self.tile_sprite.draw_frame(core, frame, x, y, color);
+				
+				//~ prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, color);
 				
 				//~ if tile.collision == Solid
 				//~ {
@@ -860,7 +879,7 @@ impl World
 		let tx = (x + TILE_SIZE / 2).div_floor(&TILE_SIZE);
 		let ty = (y + TILE_SIZE / 2).div_floor(&TILE_SIZE);
 		
-		if tx >= 0 && tx < self.width as i32 && ty >= 0 && ty < self.height as i32
+		if tx >= 0 && tx < self.width as i32 && ty >= 0 && ty < self.height as i32 && ty >= SURFACE_HEIGHT
 		{
 			let tile = self.get_tile_mut(tx as uint, ty as uint);
 			if tile.collision == Empty
@@ -901,7 +920,7 @@ impl World
 			   tile.tile_type == Surface ||
 			   tile.tile_type == CaveCeiling
 			{
-				tile.health -= 10;
+				tile.health -= 2;
 				if tile.health <= 0
 				{
 					let ret = if tile.has_gem

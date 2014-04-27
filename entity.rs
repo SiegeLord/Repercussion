@@ -1,10 +1,10 @@
 use allegro5::*;
-use allegro_primitives::*;
 
 use std::cmp::{max, min};
 
 use world::World;
 use camera::Camera;
+use gfx::Gfx;
 
 #[deriving(Eq)]
 pub enum EntityType
@@ -25,11 +25,23 @@ pub struct Entity
 	pub want_up: bool,
 	pub want_down: bool,
 	pub dead: bool,
+	pub face_left: bool,
+	pub drill_direction: DrillDirection,
 	
 	pub max_vx: i32,
 	pub w: i32,
 	pub h: i32,
 	pub entity_type: EntityType,
+}
+
+#[deriving(Eq)]
+pub enum DrillDirection
+{
+	DrillUp,
+	DrillDown,
+	DrillLeft,
+	DrillRight,
+	DrillNone
 }
 
 impl Entity
@@ -52,6 +64,8 @@ impl Entity
 			want_down: false,
 			entity_type: Player,
 			dead: false,
+			face_left: false,
+			drill_direction: DrillNone,
 		}
 	}
 	
@@ -81,10 +95,12 @@ impl Entity
 		if self.want_right
 		{
 			self.ax = 1;
+			self.face_left = false;
 		}
 		else if self.want_left
 		{
 			self.ax = -1;
+			self.face_left = true;
 		}
 		else
 		{
@@ -157,14 +173,14 @@ impl Entity
 		}
 	}
 
-	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, world: &World, camera: &Camera)
+	pub fn draw(&self, gfx: &Gfx, core: &Core, world: &World, camera: &Camera)
 	{
 		//~ if self.dead
 		//~ {
 			//~ return;
 		//~ }
-		let x = (self.x - camera.x) as f32;
-		let y = (self.y - camera.y) as f32;
+		let x = self.x - camera.x;
+		let y = self.y - camera.y;
 		
 		let l = if self.dead
 		{
@@ -175,13 +191,77 @@ impl Entity
 			world.get_light(self.x + self.w / 2, self.y + self.h / 2)
 		};
 		
-		if self.entity_type == Demon
+		let color = core.map_rgb_f(l, l, l);
+		
+		if self.dead
 		{
-			prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(l * 0.7, 0.0, 0.0));
+			gfx.skeleton.draw_no_loop(core, x, y)
 		}
 		else
 		{
-			prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(l * 0.7, 0.0, l * 0.5));
+			if self.entity_type == Demon
+			{
+				gfx.fun.draw(core, x, y)
+			}
+			else
+			{			
+				if self.drill_direction != DrillNone
+				{
+					match self.drill_direction
+					{
+						DrillLeft =>
+						{
+							gfx.drill_left.draw_tinted(core, x, y, color);
+							gfx.drill_left_hi.draw(core, x, y );
+						},
+						DrillRight =>
+						{
+							gfx.drill_right.draw_tinted(core, x, y, color);
+							gfx.drill_right_hi.draw(core, x, y );
+						},
+						DrillUp =>
+						{
+							gfx.drill_up.draw_tinted(core, x, y, color);
+							gfx.drill_up_hi.draw(core, x, y );
+						},
+						DrillDown =>
+						{
+							gfx.drill_down.draw_tinted(core, x, y, color);
+							gfx.drill_down_hi.draw(core, x, y );
+						},
+						_ => unreachable!()
+					}
+				}
+				else
+				{
+					if self.face_left
+					{
+						if self.want_left || self.want_up || self.want_down
+						{
+							gfx.player_left.draw_tinted(core, x, y, color);
+							gfx.player_left_hi.draw(core, x, y );
+						}
+						else
+						{
+							gfx.player_left.draw_frame(core, 0, x, y, color);
+							gfx.player_left_hi.draw_frame(core, 0, x, y, core.map_rgb_f(1.0, 1.0, 1.0));
+						}
+					}
+					else
+					{
+						if self.want_right || self.want_up || self.want_down
+						{
+							gfx.player_right.draw_tinted(core, x, y, color);
+							gfx.player_right_hi.draw(core, x, y );
+						}
+						else
+						{
+							gfx.player_right.draw_frame(core, 0, x, y, color);
+							gfx.player_right_hi.draw_frame(core, 0, x, y, core.map_rgb_f(1.0, 1.0, 1.0));
+						}
+					}
+				}
+			}
 		}
 	}
 }

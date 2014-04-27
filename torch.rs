@@ -1,10 +1,10 @@
 use allegro5::*;
-use allegro_primitives::*;
 
 //~ use std::cmp::{max, min};
 
 use world::{World, Cave, SupportType};
 use camera::Camera;
+use gfx::Gfx;
 
 pub struct Torch
 {
@@ -22,10 +22,10 @@ impl Torch
 	{
 		Torch
 		{
-			x: x - 4,
-			y: y - 4,
-			w: 8,
-			h: 8,
+			x: x - 8,
+			y: y - 8,
+			w: 16,
+			h: 16,
 			dead: false,
 		}
 	}
@@ -44,16 +44,16 @@ impl Torch
 		}
 	}
 
-	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, camera: &Camera)
+	pub fn draw(&self, gfx: &Gfx, core: &Core, camera: &Camera)
 	{
 		if self.dead
 		{
 			return;
 		}
 		
-		let x = (self.x - camera.x) as f32;
-		let y = (self.y - camera.y) as f32;
-		prim.draw_filled_rectangle(x, y, x + self.w as f32, y + self.h as f32, core.map_rgb_f(1.0, 1.0, 1.0));
+		let x = self.x - camera.x;
+		let y = self.y - camera.y;
+		gfx.torch.draw(core, x, y);
 	}
 
 	pub fn place_torch(world: &World, torches: &mut Vec<Torch>, player_x: i32, player_y: i32, player_w: i32, player_h: i32) -> bool

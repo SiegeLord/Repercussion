@@ -1,10 +1,10 @@
 all: main main.dep
 
 main.dep: main.rs Makefile
-	rustc --dep-info $@ -L ~/lib -g $<
+	rustc --dep-info $@ -L ~/lib -L . -g $<
 
 main: main.rs Makefile
-	rustc --dep-info $@ -L ~/lib -g $<
+	rustc --dep-info $@ -L ~/lib -L . -g $<
 
 include main.dep
 
