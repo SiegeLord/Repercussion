@@ -16,6 +16,7 @@ pub struct Demon
 	pub vy: i32,
 	pub dead: bool,
 	pub moving_to_center: bool,
+	pub active: bool,
 	
 	pub w: i32,
 	pub h: i32,
@@ -35,6 +36,7 @@ impl Demon
 			w: 24,
 			h: 24,
 			dead: false,
+			active: false,
 		}
 	}
 	
@@ -121,6 +123,7 @@ impl Demon
 						let (sx, sy) = a.get_shift();
 						self.vx = sx;
 						self.vy = sy;
+						self.active = true;
 					},
 					None => 
 					{
@@ -149,6 +152,10 @@ impl Demon
 	pub fn draw(&self, core: &Core, prim: &PrimitivesAddon, camera: &Camera)
 	{
 		if self.dead
+		{
+			return;
+		}
+		if !self.active
 		{
 			return;
 		}

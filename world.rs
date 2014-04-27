@@ -357,18 +357,18 @@ impl World
 				{
 					let g = 0.5 * tile.health as f32 / TILE_HEALTH as f32;
 					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(g, g, g));
-					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
 				}
 				else if tile.collision == Support
 				{
 					prim.draw_filled_rectangle(x, y, x + sz as f32, y + sz as f32, core.map_rgb_f(0.5, 1.0, 1.0));
-					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
+					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.support));
 				}
 				
 				if tile.collision != Solid
 				{
-					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.demon_policy));
-					core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y + 8.0, AlignLeft, format!("{}", tile.demon_value));
+					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y, AlignLeft, format!("{}", tile.demon_policy));
+					//~ core.draw_text(font, core.map_rgb_f(1.0, 1.0, 1.0), x, y + 8.0, AlignLeft, format!("{}", tile.demon_value));
 				}
 			}
 		}
@@ -384,22 +384,35 @@ impl World
 				if self.get_tile(x, y).collision != Empty && self.get_tile(x, y).tile_type != CaveCeiling
 				{
 					let mut sup = 0.0f32;
+					let mut num_supports = 0;
 					if x > 0
 					{
 						let tile = self.get_tile(x - 1, y);
 						sup = sup.max(tile.support * (tile.health as f32 / TILE_HEALTH as f32) - 1.0);
+						if tile.support > 0.0
+						{
+							num_supports += 1;
+						}
 					}
 					if x < self.width - 1
 					{
 						let tile = self.get_tile(x + 1, y);
 						sup = sup.max(tile.support * (tile.health as f32 / TILE_HEALTH as f32) - 1.0);
+						if tile.support > 0.0
+						{
+							num_supports += 1;
+						}
 					}
 					{
 						let tile = self.get_tile(x, y + 1);
 						sup = sup.max(tile.support * (tile.health as f32 / TILE_HEALTH as f32));
+						if tile.support > 0.0
+						{
+							num_supports += 1;
+						}
 					}
-					
-					if sup <= 1.0
+
+					if sup + num_supports as f32 * 0.4 <= 1.0 && self.get_tile(x, y).fall_state == 0
 					{
 						if self.get_tile(x, y + 1).collision == Empty
 						{
