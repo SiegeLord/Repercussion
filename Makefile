@@ -1,9 +1,9 @@
-all: main main.dep
+all: repercussion main.dep
 
-main.dep: main.rs Makefile
+main.dep: repercussion.rs Makefile
 	rustc --dep-info $@ -L ~/lib -L . -g $<
 
-main: main.rs Makefile
+repercussion: repercussion.rs Makefile
 	rustc --dep-info $@ -L ~/lib -L . -g $<
 
 include main.dep
@@ -11,4 +11,5 @@ include main.dep
 .PHONY: clean
 
 clean:
-	rm -f main
+	rm -f repercussion
+	rm -f main.dep
