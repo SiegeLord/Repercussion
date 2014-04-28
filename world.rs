@@ -371,7 +371,7 @@ impl World
 		self.height as i32 * TILE_SIZE
 	}
 
-	pub fn draw(&self, core: &Core, font: &Font, camera: &Camera)
+	pub fn draw(&self, core: &Core, _font: &Font, camera: &Camera)
 	{
 		let sz = TILE_SIZE;
 		let min_tx = min(max(camera.x / sz, 0) as uint, self.width);
@@ -431,12 +431,15 @@ impl World
 		}
 	}
 	
-	pub fn update(&mut self, camera: &mut Camera, torches: &[Torch], player_x: i32, player_y: i32, player_w: i32, player_h: i32)
+	pub fn update(&mut self, camera: &mut Camera, torches: &[Torch], player_x: i32, player_y: i32, player_w: i32, player_h: i32) -> bool
 	{
+		let mut any_falling = false;
 		for y in range(1, self.height - 1).rev()
 		{
 			for x in range(0, self.width)
 			{
+				any_falling |= self.get_tile(x, y).fall_state != 0;
+				
 				// Deal with supports
 				if self.get_tile(x, y).collision != Empty &&
 				   self.get_tile(x, y).tile_type != CaveCeiling &&
@@ -573,7 +576,7 @@ impl World
 		if self.policy_done && !self.need_new_policy && player_tx == self.old_player_tx && player_ty == self.old_player_ty
 		{
 			// Policy does not need changing
-			return;
+			return any_falling;
 		}
 		self.old_player_tx = player_tx;
 		self.old_player_ty = player_ty;
@@ -656,6 +659,8 @@ impl World
 		}
 		self.need_new_policy = false;
 		//~ println!("iterations: {}", iterations);
+		
+		any_falling
 	}
 	
 	pub fn get_tile<'l>(&'l self, tx: uint, ty: uint) -> &'l Tile

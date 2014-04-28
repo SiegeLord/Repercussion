@@ -16,6 +16,7 @@ pub struct Message
 	message_type: MessageType,
 	duration: i32,
 	max_width: f32,
+	pub typing: bool,
 }
 
 #[deriving(Eq)]
@@ -47,7 +48,8 @@ impl Message
 			total_len: total_len,
 			message_type: message_type,
 			duration: duration,
-			max_width: max_width
+			max_width: max_width,
+			typing: true,
 		}
 	}
 	
@@ -106,6 +108,8 @@ impl Message
 		}
 		
 		let new_done = self.progress > self.total_len;
+		
+		self.typing = !new_done;
 		
 		if new_done && !old_done
 		{

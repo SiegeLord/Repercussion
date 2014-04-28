@@ -7,7 +7,8 @@
 extern crate allegro5;
 extern crate allegro_image;
 extern crate allegro_font;
-extern crate allegro_ttf;
+extern crate allegro_audio;
+extern crate allegro_acodec;
 extern crate num;
 extern crate rand;
 extern crate time;
@@ -15,7 +16,8 @@ extern crate time;
 use allegro5::*;
 use allegro_image::*;
 use allegro_font::*;
-use allegro_ttf::*;
+use allegro_audio::*;
+use allegro_acodec::*;
 
 use world::{World, SURFACE_HEIGHT};
 use camera::Camera;
@@ -25,6 +27,7 @@ use fun::Demon;
 use torch::Torch;
 use message::Message;
 use gfx::Gfx;
+use sfx::Sfx;
 
 mod camera;
 mod world;
@@ -36,6 +39,7 @@ mod torch;
 mod message;
 mod sprite;
 mod gfx;
+mod sfx;
 
 #[deriving(Eq, Clone)]
 enum GameState
@@ -51,12 +55,13 @@ allegro_main!
 	let mut core = Core::init().unwrap();
 	ImageAddon::init(&core).expect("Failed to initialize the image addon");
 	let font_addon = FontAddon::init(&core).expect("Failed to initialize the font addon");
-	let _ttf_addon = TtfAddon::init(&font_addon).expect("Failed to initialize the ttf addon");
+	let audio = AudioAddon::init(&core).expect("Failed to initialize the audio addon");
+	let _acodec = AcodecAddon::init(&audio).expect("Failed to initialize the acodec addon");
 	
 	let dw = 800;
 	let dh = 600;
 	
-	let disp = core.create_display(dw, dh).unwrap();
+	let disp = core.create_display(dw, dh).expect("Failed to create display");
 	disp.set_window_title(&"Repercussion".to_c_str());
 
 	core.install_keyboard();
@@ -73,6 +78,7 @@ allegro_main!
 	let white = core.map_rgb_f(1.0, 1.0, 1.0);
 	
 	let mut gfx = Gfx::new(&core);
+	let mut sfx = Sfx::new(&audio);
 	let buffer = core.create_bitmap(dw / 2, dh / 2).unwrap();
 	
 	'exit: loop
@@ -106,6 +112,7 @@ allegro_main!
 		});
 		
 		let mut phil = Gem::with_color(phil_loc.val0(), phil_loc.val1(), Phil);
+		//~ let mut phil = Gem::with_color(128, 128, Phil);
 		
 		let mut mine_up = false;
 		let mut mine_down = false;
@@ -243,7 +250,14 @@ allegro_main!
 						if player.dead
 						{
 							state = Dead;
+							sfx.play_dead();
 							message = if eaten { Some(Message::eaten()) } else { Some(Message::crushed()) };
+						}
+						
+						if !player.dead
+						{
+							sfx.walk_instance.set_playing(player.want_left || player.want_right);
+							sfx.drill_instance.set_playing(player.drill_direction != DrillNone);
 						}
 						
 						if message.is_none()
@@ -259,18 +273,28 @@ allegro_main!
 						}
 						
 						// Gems
+						let old_gem_count = gem_count;
 						for g in gems.mut_iter()
 						{
 							gem_count += g.update(&world, player.x, player.y, player.w, player.h);
 						}
 						gems.retain(|g| !g.dead);
+						if old_gem_count != gem_count
+						{
+							sfx.play_gem();
+						}
 
 						// Demons
+						let old_num_demons = demons.len();
 						for d in demons.mut_iter()
 						{
 							eaten |= d.update(&world, player.x, player.y, player.w, player.h);
 						}
 						demons.retain(|d| !d.dead);
+						if demons.len() < old_num_demons
+						{
+							sfx.play_fun();
+						}
 						
 						if eaten
 						{
@@ -283,6 +307,7 @@ allegro_main!
 						if phil.dead && !phil_old_dead
 						{
 							torches.clear();
+							sfx.play_phil();
 							world.need_new_light = true;
 							message = Some(Message::found());
 						}
@@ -301,7 +326,10 @@ allegro_main!
 						}
 						
 						// World
-						world.update(&mut camera, torches.as_slice(), player.x, player.y, player.w, player.h);
+						let any_falling = world.update(&mut camera, torches.as_slice(), player.x, player.y, player.w, player.h);
+						
+						sfx.collapse_instance.set_playing(any_falling);
+						
 						// Camera
 						camera.update(player.x, player.y);
 						
@@ -310,15 +338,23 @@ allegro_main!
 							gfx.skeleton.reset(&core);
 						}
 					}
+					else
+					{
+						sfx.collapse_instance.set_playing(false);
+						sfx.drill_instance.set_playing(false);
+						sfx.walk_instance.set_playing(false);
+					}
 					
 					// Messages
 					let hide = message.as_mut().map(|m|
 					{
+						sfx.typing_instance.set_playing(m.typing);
 						m.update()
 					});
 					hide.map(|hide|
 						if hide
 						{
+							sfx.typing_instance.set_playing(false);
 							message = None;
 							if state == Won
 							{
@@ -328,6 +364,7 @@ allegro_main!
 							else if state == Ending
 							{
 								player.make_demon();
+								sfx.play_end();
 							}
 						}
 					);
@@ -352,21 +389,33 @@ allegro_main!
 							gems.push(Gem::new(x, y));
 						});
 						
-						if place_support && gem_count > 1
+						if place_support
 						{
-							if world.place_support(player.x, player.y)
+							if gem_count > 1 && world.place_support(player.x, player.y)
 							{
 								gem_count -= 2;
+								sfx.play_place();
 							}
+							else
+							{
+								sfx.play_invalid();
+							}
+							place_support = false;
 						}
 
-						if place_torch && gem_count > 0
+						if place_torch
 						{
-							if Torch::place_torch(&world, &mut torches, player.x, player.y, player.w, player.h)
+							if gem_count > 0 && Torch::place_torch(&world, &mut torches, player.x, player.y, player.w, player.h)
 							{
 								gem_count -= 1;
 								world.need_new_light = true;
+								sfx.play_place();
 							}
+							else
+							{
+								sfx.play_invalid();
+							}
+							place_torch = false;
 						}
 						
 					}
