@@ -26,7 +26,7 @@ Also requires Allegro 5.0.10.1.
 
 Once everything is in place (you can place RustAllegro .rlib's in the source directory), run `make` and hope it works.
 
-I'll be providing binaries eventually, but for now grab me (SiegeLord) in #rust at irc.mozilla.org.
+I'll be providing binaries eventually, but for now grab me (SiegeLord) in #rust at irc.mozilla.org for help.
 
 ## License
 

@@ -1,10 +1,10 @@
 all: repercussion main.dep
 
 main.dep: repercussion.rs Makefile
-	rustc --dep-info $@ -L ~/lib -L . -g $<
+	rustc -O --dep-info $@ -L ~/lib -L . -g $<
 
 repercussion: repercussion.rs Makefile
-	rustc --dep-info $@ -L ~/lib -L . -g $<
+	rustc -O --dep-info $@ -L ~/lib -L . -g $<
 
 include main.dep
 
